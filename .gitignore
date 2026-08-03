@@ -1,0 +1,25 @@
+# Fichiers d'environnement et secrets
+.env
+.env.local
+.env.*.local
+
+# Dépendances Composer
+/vendor/
+
+# Fichiers système et éditeurs (VS Code, PhpStorm, macOS, Windows)
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+.DS_Store
+Thumbs.db
+
+# Logs et fichiers temporaires
+*.log
+/tmp/
+/cache/
+/uploads/*
+!/uploads/.gitkeep

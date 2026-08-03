@@ -157,6 +157,24 @@ function aria_current(string $class): string {
                                 Les Palmares
                             </a>
                         </li>
+                        <?php $a = is_active(['/journal_classe/'], $uriPath); ?>
+                        <li>
+                            <a class="dropdown-item <?= $a ?>" href="<?= $BASE ?>/journal_classe/">
+                                Journal de classe
+                            </a>
+                        </li>
+                        <?php $a = is_active(['/cours_chapitre_lecon_resume/'], $uriPath); ?>
+                        <li>
+                            <a class="dropdown-item <?= $a ?>" href="<?= $BASE ?>/cours_chapitre_lecon_resume/">
+                                Gest. cours
+                            </a>
+                        </li>
+                        <?php $a = is_active(['/horaires/'], $uriPath); ?>
+                        <li>
+                            <a class="dropdown-item <?= $a ?>" href="<?= $BASE ?>/horaires/">
+                                Horaires
+                            </a>
+                        </li>
                     </ul>
                 </li>
             </ul>

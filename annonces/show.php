@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../includes/auth.php';
 require_directeur();
-require_once __DIR__ . '/../layout/header.php';
-require_once __DIR__ . '/../layout/navbar.php';
 
 $id = (int)($_GET['id'] ?? 0);
 if ($id <= 0) {
@@ -17,17 +15,28 @@ $error   = '';
 $annonce = null;
 
 try {
+    // Jointure dynamique selon le rôle avec la concaténation NOM POSTNOM PRENOM
     $sql = "
         SELECT 
             a.id,
             a.titre,
             a.contenu,
-            a.visible_a,
+            a.sender_role,
+            a.sender_id,
+            a.dest_type,
+            a.dest_id,
+            a.anneeScolaire,
             a.created_at,
-            a.created_by,
-            u.username AS auteur_username
+            CASE 
+                WHEN a.sender_role IN ('directeur', 'prof') THEN 
+                    TRIM(CONCAT(IFNULL(ag.nom, ''), ' ', IFNULL(ag.postnom, ''), ' ', IFNULL(ag.prenom, '')))
+                WHEN a.sender_role = 'eleve' THEN 
+                    TRIM(CONCAT(IFNULL(e.nom, ''), ' ', IFNULL(e.postnom, ''), ' ', IFNULL(e.prenom, '')))
+                ELSE NULL
+            END AS auteur_nom
         FROM annonces a
-        LEFT JOIN users u ON u.id = a.created_by
+        LEFT JOIN agent ag ON ag.id = a.sender_id AND a.sender_role IN ('directeur', 'prof')
+        LEFT JOIN eleve e  ON e.id  = a.sender_id AND a.sender_role = 'eleve'
         WHERE a.id = :id
         LIMIT 1
     ";
@@ -39,83 +48,111 @@ try {
         $error = "Annonce introuvable.";
     }
 } catch (Throwable $e) {
-    $error = "Erreur lors du chargement de l'annonce : ".$e->getMessage();
+    $error = "Erreur lors du chargement de l'annonce : " . $e->getMessage();
 }
 
-// Helper cible
-function annonce_cible_label(string $visible): string {
-    $visible = trim($visible);
-    switch ($visible) {
+// Helper pour afficher le libellé des destinataires
+function annonce_cible_label(string $destType, ?int $destId = null): string {
+    switch ($destType) {
         case 'profs':
-            return 'Professeurs';
-        case 'parents':
+            return 'Tous les professeurs';
         case 'eleves':
-            return 'Parents & élèves';
+            return 'Tous les élèves';
+        case 'user':
+            return $destId ? 'Utilisateur spécifique (ID : ' . $destId . ')' : 'Utilisateur ciblé';
         case 'tous':
         default:
-            return 'Tous';
+            return 'Tous (Tout le monde)';
     }
 }
+
+require_once __DIR__ . '/../layout/header.php';
+require_once __DIR__ . '/../layout/navbar.php';
 ?>
-<div class="container">
-  <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-    <a href="index.php" class="btn btn-sm btn-outline-secondary">
-      ← Retour à la liste
-    </a>
-    <?php if ($annonce): ?>
-      <div class="d-flex gap-2">
-        <a href="edit.php?id=<?= (int)$annonce['id'] ?>" class="btn btn-sm btn-outline-primary">
-          Modifier
+
+<div class="container my-4">
+    <div class="d-none justify-content-between align-items-center mb-3 flex-wrap gap-2">
+        <a href="index.php" class="btn btn-sm btn-outline-secondary">
+            ← Retour à la liste
         </a>
-        <a href="delete.php?id=<?= (int)$annonce['id'] ?>" class="btn btn-sm btn-outline-danger">
-          Supprimer
-        </a>
-      </div>
-    <?php endif; ?>
-  </div>
-
-  <?php if ($error): ?>
-    <div class="alert alert-danger"><?= e($error) ?></div>
-  <?php elseif ($annonce): 
-    $cibleLabel = annonce_cible_label((string)$annonce['visible_a']);
-  ?>
-    <div class="card shadow-sm border-0">
-      <div class="card-body">
-
-        <div class="text-center mb-3">
-          <div class="text-uppercase text-muted small">Communiqué officiel</div>
-          <h1 class="h4 mb-1"><?= e($annonce['titre']) ?></h1>
-          <div class="text-muted small">
-            Destinataires : <strong><?= e($cibleLabel) ?></strong>
-          </div>
+        <?php if ($annonce): ?>
+        <div class="d-flex gap-2">
+            <a href="edit.php?id=<?= (int)$annonce['id'] ?>" class="btn btn-sm btn-outline-primary">
+                Modifier
+            </a>
+            <a href="delete.php?id=<?= (int)$annonce['id'] ?>" class="btn btn-sm btn-outline-danger"
+                onclick="return confirm('Voulez-vous vraiment supprimer cette annonce ?');">
+                Supprimer
+            </a>
         </div>
-
-        <hr>
-
-        <div class="mb-3" style="white-space:pre-line;">
-          <?= nl2br(e($annonce['contenu'])) ?>
-        </div>
-
-        <hr>
-
-        <div class="d-flex justify-content-between flex-wrap gap-2 text-muted small">
-          <div>
-            Publié le 
-            <strong><?= e($annonce['created_at']) ?></strong>
-            <?php if (!empty($annonce['auteur_username'])): ?>
-              par <strong><?= e($annonce['auteur_username']) ?></strong>
-            <?php endif; ?>
-          </div>
-          <div>
-            <button class="btn btn-sm btn-outline-secondary" type="button" onclick="window.print()">
-              🖨 Imprimer
-            </button>
-          </div>
-        </div>
-
-      </div>
+        <?php endif; ?>
     </div>
-  <?php endif; ?>
+
+    <?php if (!empty($error)): ?>
+    <div class="alert alert-danger"><?= htmlspecialchars($error) ?></div>
+    <?php elseif ($annonce): 
+        $cibleLabel = annonce_cible_label(
+            (string)$annonce['dest_type'], 
+            $annonce['dest_id'] ? (int)$annonce['dest_id'] : null
+        );
+        $auteurNom = !empty($annonce['auteur_nom']) ? trim($annonce['auteur_nom']) : null;
+    ?>
+    <div class="card shadow-sm border-0">
+        <div class="card-body p-4">
+
+            <div class="mb-4">
+                <div class="text-uppercase text-muted small fw-bold">Communiqué/Annonce/Message
+                    <?php if (!empty($annonce['anneeScolaire'])): ?>
+                    <span class="badge bg-secondary">
+                        Année scolaire : <?= htmlspecialchars($annonce['anneeScolaire']) ?>
+                    </span>
+                    <?php endif; ?>
+                </div>
+
+                <div class="d-none justify-content-center gap-2 flex-wrap text-muted small mt-2">
+                    <span class="badge bg-info text-dark">
+                        Destinataires : <?= htmlspecialchars($cibleLabel) ?>
+                    </span>
+                    <?php if (!empty($annonce['anneeScolaire'])): ?>
+                    <span class="badge bg-secondary">
+                        Année scolaire : <?= htmlspecialchars($annonce['anneeScolaire']) ?>
+                    </span>
+                    <?php endif; ?>
+                </div>
+            </div>
+
+            <hr>
+            <h1 class="h3 mb-2 text-primary"><?= htmlspecialchars($annonce['titre']) ?></h1>
+            <div class="my-4" style="white-space: pre-line; line-height: 1.7; font-size: 1.05rem;">
+                <?= nl2br(htmlspecialchars($annonce['contenu'])) ?>
+            </div>
+
+            <hr>
+
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 text-muted small">
+                <div>
+                    Publié le
+                    <strong><?= date('d/m/Y à H:i', strtotime($annonce['created_at'])) ?></strong>
+                    <?php if ($auteurNom): ?>
+                    par <strong><?= htmlspecialchars($auteurNom) ?></strong>
+                    (<?= htmlspecialchars(ucfirst($annonce['sender_role'])) ?>)
+                    <?php else: ?>
+                    par <strong><?= htmlspecialchars(ucfirst($annonce['sender_role'])) ?></strong>
+                    <?php endif; ?>
+                </div>
+                <div>
+                    <button class="btn btn-sm btn-primary" type="button" onclick="window.print()">
+                        Répondre
+                    </button>
+                    <button class="btn btn-sm btn-outline-secondary" type="button" onclick="window.print()">
+                        🖨 Imprimer
+                    </button>
+                </div>
+            </div>
+
+        </div>
+    </div>
+    <?php endif; ?>
 </div>
 
 <?php require_once __DIR__ . '/../layout/footer.php'; ?>
