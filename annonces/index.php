@@ -182,7 +182,7 @@ require_once __DIR__ . '/../layout/navbar.php';
 
   <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
     <div>
-      <h1 class="h4 mb-0">Communiqués</h1>
+      <h1 class="h5 mb-0 text-uppercase">Communiqués/Annonces/Messages</h1>
       <div class="text-muted small">Reçus / Envoyés</div>
     </div>
     <a href="create.php" class="btn btn-sm btn-primary">+ Nouveau communiqué</a>
