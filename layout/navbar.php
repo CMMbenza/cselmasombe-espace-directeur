@@ -175,7 +175,20 @@ function aria_current(string $class): string {
                                 Horaires
                             </a>
                         </li>
+                        <?php $a = is_active(['/previsions_des_matieres/'], $uriPath); ?>
+                        <li>
+                            <a class="dropdown-item <?= $a ?>" href="<?= $BASE ?>/previsions_des_matieres/">
+                                Previsions des matières
+                            </a>
+                        </li>
                     </ul>
+                </li>
+
+                <?php $a = is_active(['/situation_financiere/'], $uriPath); ?>
+                <li class="nav-item">
+                    <a class="nav-link <?= $a ?>" <?= aria_current($a) ?> href="<?= $BASE ?>/situation_financiere/">
+                        Situation financière
+                    </a>
                 </li>
             </ul>
 
