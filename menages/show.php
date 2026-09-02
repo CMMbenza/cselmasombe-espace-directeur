@@ -7,6 +7,10 @@ require_directeur(); // $pdo, e(), BASE_URL, anti-cache
 require_once __DIR__ . '/../layout/header.php';
 require_once __DIR__ . '/../layout/navbar.php';
 
+// Vérification du rôle Directeur
+$userRole    = (string)($_SESSION['user']['role'] ?? '');
+$isDirecteur = (strtolower(trim($userRole)) === 'directeur');
+
 $menageId = (int)($_GET['id'] ?? 0);
 if ($menageId <= 0) {
     header('Location: ' . BASE_URL . '/menages/index.php'); exit;
@@ -21,12 +25,12 @@ $pAgg   = ['a_payer'=>0.0, 'paye'=>0.0, 'reste'=>0.0];
 $pRows  = [];
 
 // Agrégats frais connexes (paiement_divers)
-$dAgg          = ['a_payer'=>0.0, 'paye'=>0.0, 'reste'=>0.0];
-$dByType       = []; // par type_frais
-$dRows         = []; // historique
+$dAgg    = ['a_payer'=>0.0, 'paye'=>0.0, 'reste'=>0.0];
+$dByType = [];
+$dRows   = [];
 
 try {
-    // 1) Info ménage avec province et tous les autres champs
+    // 1) Info ménage
     $stmt = $pdo->prepare("
         SELECT id, noms, telephone, email, numero, avenue, quartier, commune, province,
                dateCreated, montantAPayer, montantAPayerFC, start_tranche, STATUS
@@ -40,7 +44,7 @@ try {
         header('Location: ' . BASE_URL . '/menages/index.php'); exit;
     }
 
-    // 2) Enfants du ménage (avec détails complets)
+    // 2) Enfants du ménage
     $stmtE = $pdo->prepare("
         SELECT 
           e.id,
@@ -60,81 +64,60 @@ try {
     $stmtE->execute([':id' => $menageId]);
     $enfants = $stmtE->fetchAll(PDO::FETCH_ASSOC);
 
-    // 3) Agrégat Paiement (frais scolaires) — table paiement
-    $stmtPA = $pdo->prepare("
-        SELECT 
-          COALESCE(SUM(montantAPayer), 0) AS total_a_payer,
-          COALESCE(SUM(montantPayer),  0) AS total_paye,
-          COALESCE(SUM(resteAPayer),   0) AS total_reste
-        FROM paiement
-        WHERE menage = :id
-    ");
-    $stmtPA->execute([':id' => $menageId]);
-    $agg = $stmtPA->fetch(PDO::FETCH_ASSOC) ?: [];
-    $a_payer = (float)($agg['total_a_payer'] ?? 0);
-    $paye    = (float)($agg['total_paye'] ?? 0);
-    $reste   = max(0.0, $a_payer - $paye);
-    $pAgg    = ['a_payer'=>$a_payer, 'paye'=>$paye, 'reste'=>$reste];
+    // Charger les informations financières UNIQUEMENT si rôle Directeur
+    if ($isDirecteur) {
+        // 3) Agrégat Paiement (frais scolaires)
+        $stmtPA = $pdo->prepare("
+            SELECT 
+              COALESCE(SUM(montantAPayer), 0) AS total_a_payer,
+              COALESCE(SUM(montantPayer),  0) AS total_paye,
+              COALESCE(SUM(resteAPayer),   0) AS total_reste
+            FROM paiement
+            WHERE menage = :id
+        ");
+        $stmtPA->execute([':id' => $menageId]);
+        $agg = $stmtPA->fetch(PDO::FETCH_ASSOC) ?: [];
+        $a_payer = (float)($agg['total_a_payer'] ?? 0);
+        $paye    = (float)($agg['total_paye'] ?? 0);
+        $reste   = max(0.0, $a_payer - $paye);
+        $pAgg    = ['a_payer'=>$a_payer, 'paye'=>$paye, 'reste'=>$reste];
 
-    // 4) Historique des lignes de paiement (scolarité)
-    $stmtPL = $pdo->prepare("
-        SELECT id, montantAPayer, montantPayer, resteAPayer, observation, dateCreated, anneeScolaire
-        FROM paiement
-        WHERE menage = :id
-        ORDER BY dateCreated DESC, id DESC
-    ");
-    $stmtPL->execute([':id' => $menageId]);
-    $pRows = $stmtPL->fetchAll(PDO::FETCH_ASSOC);
+        // 4) Historique des lignes de paiement
+        $stmtPL = $pdo->prepare("
+            SELECT id, montantAPayer, montantPayer, resteAPayer, observation, dateCreated, anneeScolaire
+            FROM paiement
+            WHERE menage = :id
+            ORDER BY dateCreated DESC, id DESC
+        ");
+        $stmtPL->execute([':id' => $menageId]);
+        $pRows = $stmtPL->fetchAll(PDO::FETCH_ASSOC);
 
-    // 5) Agrégats FRAIS CONNEXES — table paiement_divers (global)
-    $stmtDA = $pdo->prepare("
-        SELECT 
-          COALESCE(SUM(montantAPayer), 0) AS total_a_payer,
-          COALESCE(SUM(montantPayer),  0) AS total_paye,
-          COALESCE(SUM(resteAPayer),   0) AS total_reste
-        FROM paiement_divers
-        WHERE menage = :id
-    ");
-    $stmtDA->execute([':id' => $menageId]);
-    $dAggRow = $stmtDA->fetch(PDO::FETCH_ASSOC) ?: [];
-    $d_a_payer = (float)($dAggRow['total_a_payer'] ?? 0);
-    $d_paye    = (float)($dAggRow['total_paye'] ?? 0);
-    $d_reste   = max(0.0, $d_a_payer - $d_paye);
-    $dAgg = ['a_payer'=>$d_a_payer, 'paye'=>$d_paye, 'reste'=>$d_reste];
+        // 5) Agrégats FRAIS CONNEXES
+        $stmtDA = $pdo->prepare("
+            SELECT 
+              COALESCE(SUM(montantAPayer), 0) AS total_a_payer,
+              COALESCE(SUM(montantPayer),  0) AS total_paye,
+              COALESCE(SUM(resteAPayer),   0) AS total_reste
+            FROM paiement_divers
+            WHERE menage = :id
+        ");
+        $stmtDA->execute([':id' => $menageId]);
+        $dAggRow = $stmtDA->fetch(PDO::FETCH_ASSOC) ?: [];
+        $d_a_payer = (float)($dAggRow['total_a_payer'] ?? 0);
+        $d_paye    = (float)($dAggRow['total_paye'] ?? 0);
+        $d_reste   = max(0.0, $d_a_payer - $d_paye);
+        $dAgg = ['a_payer'=>$d_a_payer, 'paye'=>$d_paye, 'reste'=>$d_reste];
 
-    // 6) Agrégats par type_frais
-    $stmtDT = $pdo->prepare("
-        SELECT type_frais,
-               COALESCE(SUM(montantAPayer), 0) AS a_payer,
-               COALESCE(SUM(montantPayer),  0) AS paye,
-               COALESCE(SUM(resteAPayer),   0) AS reste_col
-        FROM paiement_divers
-        WHERE menage = :id
-        GROUP BY type_frais
-        ORDER BY type_frais
-    ");
-    $stmtDT->execute([':id' => $menageId]);
-    while ($row = $stmtDT->fetch(PDO::FETCH_ASSOC)) {
-        $a  = (float)($row['a_payer'] ?? 0);
-        $p  = (float)($row['paye'] ?? 0);
-        $re = max(0.0, $a - $p);
-        $dByType[] = [
-          'type_frais' => (string)$row['type_frais'],
-          'a_payer'    => $a,
-          'paye'       => $p,
-          'reste'      => $re,
-        ];
+        // 6) Historique des écritures paiement_divers
+        $stmtDL = $pdo->prepare("
+            SELECT id, type_frais, montantAPayer, montantPayer, resteAPayer, observation, anneeScolaire, dateCreated
+            FROM paiement_divers
+            WHERE menage = :id
+            ORDER BY dateCreated DESC, id DESC
+        ");
+        $stmtDL->execute([':id' => $menageId]);
+        $dRows = $stmtDL->fetchAll(PDO::FETCH_ASSOC);
     }
-
-    // 7) Historique des écritures paiement_divers
-    $stmtDL = $pdo->prepare("
-        SELECT id, type_frais, montantAPayer, montantPayer, resteAPayer, observation, anneeScolaire, dateCreated
-        FROM paiement_divers
-        WHERE menage = :id
-        ORDER BY dateCreated DESC, id DESC
-    ");
-    $stmtDL->execute([':id' => $menageId]);
-    $dRows = $stmtDL->fetchAll(PDO::FETCH_ASSOC);
 
 } catch (Throwable $e) {
     $error = "Impossible de charger les détails du ménage.";
@@ -151,8 +134,7 @@ try {
             </span>
             <?php endif; ?>
         </h1>
-        <a class="btn btn-outline-secondary btn-sm" href="<?= BASE_URL ?>/menages/index.php">&larr; Retour à la
-            liste</a>
+        <a class="btn btn-outline-secondary btn-sm" href="<?= BASE_URL ?>/menages/index.php">&larr; Retour à la liste</a>
     </div>
 
     <?php if ($error): ?>
@@ -176,9 +158,9 @@ try {
 
                 <div class="col-md-4">
                     <?php
-              $addr  = implode(' ', array_filter(['N°' . ($menage['numero'] ?: ''), $menage['avenue'] ?: '']));
-              $addr2 = implode(' - ', array_filter([$menage['quartier'] ?: '', $menage['commune'] ?: '']));
-            ?>
+                      $addr  = implode(' ', array_filter(['N°' . ($menage['numero'] ?: ''), $menage['avenue'] ?: '']));
+                      $addr2 = implode(' - ', array_filter([$menage['quartier'] ?: '', $menage['commune'] ?: '']));
+                    ?>
                     <div class="mb-1"><span class="text-muted small">Adresse & Localisation</span></div>
                     <div><?= e(trim($addr)) ?: '—' ?></div>
                     <div class="small text-muted"><?= e($addr2 ?: '—') ?></div>
@@ -188,15 +170,15 @@ try {
         </div>
     </div>
 
-    <!-- Scolarité (paiement) -->
+    <?php if ($isDirecteur): ?>
+    <!-- Scolarité (paiement) - Réservé Directeur -->
     <?php $progress = ($pAgg['a_payer'] > 0) ? min(100, max(0, round($pAgg['paye'] * 100 / $pAgg['a_payer']))) : 0; ?>
     <div class="card shadow-sm mb-4">
         <div class="card-body">
             <div class="d-flex flex-wrap align-items-center justify-content-between mb-2">
                 <h5 class="h6 mb-0">Modalité de paiement — Frais scolaire</h5>
                 <div class="small text-muted">
-                    Montant fixe (ménage) : <strong><?= number_format((float)$menage['montantAPayer'], 2, ',', ' ') ?>
-                        USD</strong>
+                    Montant fixe (ménage) : <strong><?= number_format((float)$menage['montantAPayer'], 2, ',', ' ') ?> USD</strong>
                     / <strong><?= number_format((float)$menage['montantAPayerFC'], 2, ',', ' ') ?> USD</strong>
                 </div>
             </div>
@@ -250,8 +232,7 @@ try {
                             <td><?= e($p['anneeScolaire'] ?? '—') ?></td>
                             <td class="text-end"><?= number_format((float)$p['montantAPayer'], 2, ',', ' ') ?> USD</td>
                             <td class="text-end"><?= number_format((float)$p['montantPayer'], 2, ',', ' ') ?> USD</td>
-                            <td class="text-end text-danger"><?= number_format((float)$p['resteAPayer'], 2, ',', ' ') ?>
-                                USD</td>
+                            <td class="text-end text-danger"><?= number_format((float)$p['resteAPayer'], 2, ',', ' ') ?> USD</td>
                             <td><?= nl2br(e($p['observation'] ?? '')) ?></td>
                         </tr>
                         <?php endforeach; ?>
@@ -264,7 +245,7 @@ try {
         </div>
     </div>
 
-    <!-- FRAIS CONNEXES (paiement_divers) -->
+    <!-- FRAIS CONNEXES (paiement_divers) - Réservé Directeur -->
     <?php $d_progress = ($dAgg['a_payer'] > 0) ? min(100, max(0, round($dAgg['paye'] * 100 / $dAgg['a_payer']))) : 0; ?>
     <div class="card shadow-sm mb-4">
         <div class="card-body">
@@ -324,8 +305,7 @@ try {
                             <td><?= e($d['anneeScolaire'] ?? '—') ?></td>
                             <td class="text-end"><?= number_format((float)$d['montantAPayer'], 2, ',', ' ') ?> USD</td>
                             <td class="text-end"><?= number_format((float)$d['montantPayer'], 2, ',', ' ') ?> USD</td>
-                            <td class="text-end text-danger"><?= number_format((float)$d['resteAPayer'], 2, ',', ' ') ?>
-                                USD</td>
+                            <td class="text-end text-danger"><?= number_format((float)$d['resteAPayer'], 2, ',', ' ') ?> USD</td>
                             <td><?= nl2br(e($d['observation'] ?? '')) ?></td>
                         </tr>
                         <?php endforeach; ?>
@@ -337,6 +317,7 @@ try {
             <?php endif; ?>
         </div>
     </div>
+    <?php endif; ?>
 
     <!-- Enfants du ménage -->
     <div class="card shadow-sm">
@@ -360,7 +341,6 @@ try {
                             <th>Naissance</th>
                             <th>Nationalité</th>
                             <th>Classe</th>
-                            <!-- <th>Cycle</th> -->
                             <th>Année scolaire</th>
                             <th>Statut</th>
                         </tr>
@@ -368,12 +348,11 @@ try {
                     <tbody>
                         <?php foreach ($enfants as $e_item): ?>
                         <?php 
-                    // Génération dynamique du matricule miroir
-                    $iNom     = mb_strtoupper(mb_substr(trim($e_item['nom'] ?? ''), 0, 1));
-                    $iPostnom = mb_strtoupper(mb_substr(trim($e_item['postnom'] ?? ''), 0, 1));
-                    $iPrenom  = mb_strtoupper(mb_substr(trim($e_item['prenom'] ?? ''), 0, 1));
-                    $matriculeMiroir = $e_item['id'].'-'. $iNom . $iPostnom . $iPrenom.'-'.'CSES26';
-                  ?>
+                          $iNom     = mb_strtoupper(mb_substr(trim($e_item['nom'] ?? ''), 0, 1));
+                          $iPostnom = mb_strtoupper(mb_substr(trim($e_item['postnom'] ?? ''), 0, 1));
+                          $iPrenom  = mb_strtoupper(mb_substr(trim($e_item['prenom'] ?? ''), 0, 1));
+                          $matriculeMiroir = $e_item['id'].'-'. $iNom . $iPostnom . $iPrenom.'-'.'CSES26';
+                        ?>
                         <tr>
                             <td><?= (int)$e_item['id'] ?></td>
                             <td><code><?= e($matriculeMiroir) ?></code></td>
@@ -385,7 +364,6 @@ try {
                             </td>
                             <td><?= e($e_item['nationalite']) ?></td>
                             <td><?= e($e_item['classe_desc']) ?>-<?= e($e_item['cycle_desc'] ?? '—') ?></td>
-                            <!-- <td><?= e($e_item['cycle_desc'] ?? '—') ?></td> -->
                             <td><?= e($e_item['anneeScolaire']) ?></td>
                             <td>
                                 <span class="badge bg-<?= $e_item['STATUS'] === 'actif' ? 'success' : 'danger' ?>">

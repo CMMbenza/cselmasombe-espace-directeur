@@ -12,6 +12,10 @@ require_once __DIR__ . '/../includes/helpers.php';
 $uriPath = (string) parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH);
 $BASE    = defined('BASE_URL') ? BASE_URL : '/directeur';
 
+// Récupération et vérification du rôle Directeur
+$userRole    = (string) ($_SESSION['user']['role'] ?? '');
+$isDirecteur = (strtolower(trim($userRole)) === 'directeur');
+
 function is_active(array|string $needles, string $haystack): string {
     $needles = is_array($needles) ? $needles : [$needles];
     foreach ($needles as $n) {
@@ -87,7 +91,7 @@ function aria_current(string $class): string {
                 </li>
 
                 <?php
-                // Bloc scolarité (caché pour l’instant)
+                // Bloc scolarité (caché par défaut)
                 $scholarNeedles = ['/menages/', '/classe/', '/paiements/', '/paiements_divers/'];
                 $activeScholar  = is_active($scholarNeedles, $uriPath) ? 'active' : '';
                 ?>
@@ -114,7 +118,7 @@ function aria_current(string $class): string {
                 </li>
 
                 <?php
-                // Nouveau dropdown "Prof/Enseignant"
+                // Dropdown "Prof/Enseignant"
                 $addProfNeedles = ['/agents/', '/quiz/', '/affectations/', '/cours/'];
                 $activeAddProf  = is_active($addProfNeedles, $uriPath) ? 'active' : '';
                 ?>
@@ -124,12 +128,15 @@ function aria_current(string $class): string {
                         Prof/Enseignant
                     </a>
                     <ul class="dropdown-menu" aria-labelledby="ajouterProfDropdown">
-                        <?php $a = is_active(['/agents/'], $uriPath); ?>
-                        <li>
-                            <a class="dropdown-item <?= $a ?>" href="<?= $BASE ?>/agents/">
-                                Agent
-                            </a>
-                        </li>
+                        <?php if ($isDirecteur): ?>
+                            <!-- Agent est affiché uniquement pour le directeur -->
+                            <?php $a = is_active(['/agents/'], $uriPath); ?>
+                            <li>
+                                <a class="dropdown-item <?= $a ?>" href="<?= $BASE ?>/agents/">
+                                    Agent
+                                </a>
+                            </li>
+                        <?php endif; ?>
 
                         <?php $a = is_active(['/quiz/'], $uriPath); ?>
                         <li>
@@ -184,12 +191,15 @@ function aria_current(string $class): string {
                     </ul>
                 </li>
 
-                <?php $a = is_active(['/situation_financiere/'], $uriPath); ?>
-                <li class="nav-item">
-                    <a class="nav-link <?= $a ?>" <?= aria_current($a) ?> href="<?= $BASE ?>/situation_financiere/">
-                        Situation financière
-                    </a>
-                </li>
+                <?php if ($isDirecteur): ?>
+                    <!-- Situation financière affichée uniquement pour le directeur -->
+                    <?php $a = is_active(['/situation_financiere/'], $uriPath); ?>
+                    <li class="nav-item">
+                        <a class="nav-link <?= $a ?>" <?= aria_current($a) ?> href="<?= $BASE ?>/situation_financiere/">
+                            Situation financière
+                        </a>
+                    </li>
+                <?php endif; ?>
             </ul>
 
             <div class="d-flex align-items-center gap-2">

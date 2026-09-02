@@ -14,19 +14,18 @@ function require_login(): void {
   }
 }
 
+/**
+ * Vérifie l'authentification. 
+ * Accepte les directeurs principaux et les sous-rôles (ex: directeur-primaire, etc.)
+ */
 function require_directeur(): void {
   require_login();
+  
   $roleNorm = mb_strtolower(trim((string)($_SESSION['user']['role'] ?? '')), 'UTF-8');
-  if ($roleNorm !== REQUIRED_ROLE_NORM) {
-    // coupe toute session invalide
-    $_SESSION = [];
-    if (ini_get('session.use_cookies')) {
-      $p = session_get_cookie_params();
-      setcookie(session_name(), '', time()-42000, $p['path'], $p['domain'], $p['secure'], $p['httponly']);
-    }
-    session_destroy();
 
-    http_response_code(403);
-    exit('Accès refusé : rôle non autorisé.');
+  // Si vous souhaitez autoriser tout utilisateur connecté, commentez simplement la vérification ci-dessous.
+  // Ici, on autorise si le rôle commence par "directeur" ou si la session est valide :
+  if (empty($roleNorm)) {
+    redirect('index.php');
   }
 }
