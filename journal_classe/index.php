@@ -221,6 +221,13 @@ require_once __DIR__.'/../layout/navbar.php';
                         </td>
                         <td>
                             <div class="btn-group" role="group">
+                                <!-- Bouton pour ouvrir la liste des résumés avec filtrage -->
+                                <a href="../cours_chapitre_lecon_resume/?cours_id=<?= $j['cours_id'] ?>&classe_id=<?= $j['classe_id'] ?>&prof_id=<?= $j['prof_id'] ?>"
+                                    class="btn btn-sm btn-info text-white"
+                                    title="Voir les résumés pour ce cours/classe">
+                                    👁️
+                                </a>
+
                                 <!-- Bouton Modifier avec transmission de données via data-* -->
                                 <button type="button" class="btn btn-sm btn-outline-primary edit-btn"
                                     data-bs-toggle="modal" data-bs-target="#editModal" data-id="<?= $j['id'] ?>"

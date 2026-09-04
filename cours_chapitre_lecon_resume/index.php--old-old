@@ -1,0 +1,534 @@
+<?php
+declare(strict_types=1);
+
+require_once __DIR__.'/../includes/auth.php';
+require_directeur();
+
+$action = $_GET['action'] ?? '';
+$id     = (int)($_GET['id'] ?? 0);
+
+// --- AJOUT D'UN CHAPITRE ---
+if (isset($_POST['add_chapitre'])) {
+    $titre     = trim($_POST['titre']);
+    $cours_id  = (int)$_POST['cours_id'];
+    $classe_id = (int)$_POST['classe_id'];
+    $prof_id   = (int)$_POST['prof_id'];
+
+    $stmt = $pdo->prepare("INSERT INTO cours_chapitres (titre, cours_id, classe_id, prof_id) VALUES (?, ?, ?, ?)");
+    $stmt->execute([$titre, $cours_id, $classe_id, $prof_id]);
+    header('Location: index.php?msg=chap_added');
+    exit();
+}
+
+// --- MODIFICATION D'UN CHAPITRE ---
+if (isset($_POST['edit_chapitre'])) {
+    $chapitre_id = (int)$_POST['chapitre_id'];
+    $titre       = trim($_POST['titre']);
+    $cours_id    = (int)$_POST['cours_id'];
+    $classe_id   = (int)$_POST['classe_id'];
+    $prof_id     = (int)$_POST['prof_id'];
+
+    $stmt = $pdo->prepare("UPDATE cours_chapitres SET titre = ?, cours_id = ?, classe_id = ?, prof_id = ? WHERE id = ?");
+    $stmt->execute([$titre, $cours_id, $classe_id, $prof_id, $chapitre_id]);
+    header('Location: index.php?msg=chap_updated');
+    exit();
+}
+
+// --- AJOUT D'UNE LEÇON DANS UN CHAPITRE ---
+if (isset($_POST['add_lecon'])) {
+    $chapitre_id = (int)$_POST['chapitre_id'];
+    $titre       = trim($_POST['titre']);
+    $description = trim($_POST['description'] ?? '');
+    $contenu     = trim($_POST['contenu'] ?? '');
+    $type_format = $_POST['type_format'];
+    $fichier     = '';
+
+    if (!empty($_FILES['fichier']['name'])) {
+        $uploadDir = __DIR__.'/../../uploads/cours_lecons/';
+        if (!is_dir($uploadDir)) {
+            mkdir($uploadDir, 0777, true);
+        }
+        $ext = pathinfo($_FILES['fichier']['name'], PATHINFO_EXTENSION);
+        $fichier = uniqid('lecon_').'.'.$ext;
+        move_uploaded_file($_FILES['fichier']['tmp_name'], $uploadDir.$fichier);
+    }
+
+    $stmt = $pdo->prepare("INSERT INTO cours_lecons (chapitre_id, titre, description, contenu, fichier, type_format) VALUES (?, ?, ?, ?, ?, ?)");
+    $stmt->execute([$chapitre_id, $titre, $description, $contenu, $fichier, $type_format]);
+    header('Location: index.php?msg=lecon_added');
+    exit();
+}
+
+// --- MODIFICATION D'UNE LEÇON ---
+if (isset($_POST['edit_lecon'])) {
+    $lecon_id    = (int)$_POST['lecon_id'];
+    $titre       = trim($_POST['titre']);
+    $description = trim($_POST['description'] ?? '');
+    $contenu     = trim($_POST['contenu'] ?? '');
+    $type_format = $_POST['type_format'];
+
+    // Récupérer le fichier actuel
+    $stmtFile = $pdo->prepare("SELECT fichier FROM cours_lecons WHERE id = ?");
+    $stmtFile->execute([$lecon_id]);
+    $currentFile = $stmtFile->fetchColumn();
+    $fichier = $currentFile;
+
+    // Si un nouveau fichier est téléversé
+    if (!empty($_FILES['fichier']['name'])) {
+        $uploadDir = __DIR__.'/../../uploads/cours_lecons/';
+        if (!is_dir($uploadDir)) {
+            mkdir($uploadDir, 0777, true);
+        }
+
+        // Supprimer l'ancien fichier s'il existe
+        if ($currentFile && file_exists($uploadDir.$currentFile)) {
+            @unlink($uploadDir.$currentFile);
+        }
+
+        $ext = pathinfo($_FILES['fichier']['name'], PATHINFO_EXTENSION);
+        $fichier = uniqid('lecon_').'.'.$ext;
+        move_uploaded_file($_FILES['fichier']['tmp_name'], $uploadDir.$fichier);
+    }
+
+    $stmt = $pdo->prepare("UPDATE cours_lecons SET titre = ?, description = ?, contenu = ?, fichier = ?, type_format = ? WHERE id = ?");
+    $stmt->execute([$titre, $description, $contenu, $fichier, $type_format, $lecon_id]);
+    header('Location: index.php?msg=lecon_updated');
+    exit();
+}
+
+// --- SUPPRESSION CHAPITRE OU LEÇON ---
+if ($action === 'delete_chap' && $id > 0) {
+    $pdo->prepare("DELETE FROM cours_chapitres WHERE id = ?")->execute([$id]);
+    header('Location: index.php?msg=chap_deleted');
+    exit();
+}
+if ($action === 'delete_lecon' && $id > 0) {
+    $stmtFile = $pdo->prepare("SELECT fichier FROM cours_lecons WHERE id = ?");
+    $stmtFile->execute([$id]);
+    $fileToDelete = $stmtFile->fetchColumn();
+    if ($fileToDelete && file_exists(__DIR__.'/../../uploads/cours_lecons/'.$fileToDelete)) {
+        @unlink(__DIR__.'/../../uploads/cours_lecons/'.$fileToDelete);
+    }
+
+    $pdo->prepare("DELETE FROM cours_lecons WHERE id = ?")->execute([$id]);
+    header('Location: index.php?msg=lecon_deleted');
+    exit();
+}
+
+// --- RÉCUPÉRATION DES CHAPITRES AVEC JOINTURES ---
+$chapitresRaw = $pdo->query("
+    SELECT ch.*, 
+           CONCAT(c.description ,' ', cy.description) AS classe_nom, 
+           co.intitule AS cours_nom, 
+           CONCAT(u.nom, ' ', u.prenom) AS prof_nom
+    FROM cours_chapitres ch
+    LEFT JOIN classe c ON c.id = ch.classe_id
+    LEFT JOIN cours co ON co.id = ch.cours_id
+    LEFT JOIN cycle cy ON cy.id = c.cycle 
+    LEFT JOIN agent u ON u.id = ch.prof_id
+    ORDER BY co.intitule ASC, c.description ASC, ch.id ASC
+")->fetchAll();
+
+// Structure regroupée : [cours_id] => [classe_id] => [liste des chapitres]
+$groupedData = [];
+foreach ($chapitresRaw as $chap) {
+    $cId  = $chap['cours_id'];
+    $clId = $chap['classe_id'];
+
+    if (!isset($groupedData[$cId])) {
+        $groupedData[$cId] = [
+            'cours_nom' => $chap['cours_nom'] ?? 'Cours non spécifié',
+            'classes'   => []
+        ];
+    }
+
+    if (!isset($groupedData[$cId]['classes'][$clId])) {
+        $groupedData[$cId]['classes'][$clId] = [
+            'classe_nom' => $chap['classe_nom'] ?? 'Classe non spécifiée',
+            'chapitres'  => []
+        ];
+    }
+
+    $groupedData[$cId]['classes'][$clId]['chapitres'][] = $chap;
+}
+
+$profs   = $pdo->query("SELECT id, CONCAT(nom, ' ', prenom) AS nom_complet FROM agent ORDER BY nom")->fetchAll();
+$classes = $pdo->query("SELECT classe.id, CONCAT(classe.description ,' ', cy.description) AS description FROM classe LEFT JOIN cycle cy ON cy.id = classe.cycle ORDER BY description")->fetchAll();
+$cours   = $pdo->query("SELECT id, intitule FROM cours ORDER BY intitule")->fetchAll();
+
+require_once __DIR__.'/../layout/header.php';
+require_once __DIR__.'/../layout/navbar.php';
+?>
+
+<style>
+/* CSS Animation Voir plus / Voir moins */
+.resume-container {
+    transition: all 0.4s ease-in-out;
+}
+.resume-collapsed {
+    max-height: 80px;
+    overflow: hidden;
+    position: relative;
+}
+.resume-collapsed::after {
+    content: "";
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 35px;
+    background: linear-gradient(to bottom, rgba(255, 255, 255, 0), rgba(255, 255, 255, 1));
+    pointer-events: none;
+}
+.resume-expanded {
+    max-height: 2000px;
+}
+</style>
+
+<div class="container-fluid mt-4 mb-5">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h4>📚 Programme : Cours > Classe > Chapitres</h4>
+        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addChapModal">+ Nouveau Chapitre</button>
+    </div>
+
+    <?php if (empty($groupedData)): ?>
+    <div class="alert alert-info text-center">Aucun cours ni chapitre enregistré pour le moment.</div>
+    <?php endif; ?>
+
+    <!-- NIVEAU 1 : LES COURS -->
+    <div class="accordion" id="accordionCours">
+        <?php foreach ($groupedData as $coursId => $coursGroup): ?>
+        <div class="accordion-item mb-3 border border-primary shadow-sm">
+            <h2 class="accordion-header">
+                <button class="accordion-button collapsed bg-light text-primary fw-bold fs-5" type="button"
+                    data-bs-toggle="collapse" data-bs-target="#coursBlock<?= $coursId ?>">
+                    📖 Cours : <?= htmlspecialchars($coursGroup['cours_nom']) ?>
+                </button>
+            </h2>
+            <div id="coursBlock<?= $coursId ?>" class="accordion-collapse collapse" data-bs-parent="#accordionCours">
+                <div class="accordion-body bg-white">
+
+                    <!-- NIVEAU 2 : LES CLASSES POUR CE COURS -->
+                    <div class="accordion" id="accordionClasses<?= $coursId ?>">
+                        <?php foreach ($coursGroup['classes'] as $classeId => $classeGroup): ?>
+                        <div class="accordion-item mb-2 border">
+                            <h3 class="accordion-header">
+                                <button class="accordion-button collapsed fw-bold text-dark" type="button"
+                                    data-bs-toggle="collapse"
+                                    data-bs-target="#classeBlock<?= $coursId ?>_<?= $classeId ?>">
+                                    🏫 Classe : <?= htmlspecialchars($classeGroup['classe_nom']) ?>
+                                    <span class="badge bg-secondary ms-2"><?= count($classeGroup['chapitres']) ?> chapitre(s)</span>
+                                </button>
+                            </h3>
+                            <div id="classeBlock<?= $coursId ?>_<?= $classeId ?>" class="accordion-collapse collapse"
+                                data-bs-parent="#accordionClasses<?= $coursId ?>">
+                                <div class="accordion-body">
+
+                                    <!-- NIVEAU 3 : LES CHAPITRES ET LEÇONS -->
+                                    <?php foreach ($classeGroup['chapitres'] as $chap): 
+                                                $stmtL = $pdo->prepare("SELECT * FROM cours_lecons WHERE chapitre_id = ? ORDER BY id ASC");
+                                                $stmtL->execute([$chap['id']]);
+                                                $lecons = $stmtL->fetchAll();
+                                            ?>
+                                    <div class="card mb-3 border-0 bg-light shadow-sm">
+                                        <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                                            <div>
+                                                <h6 class="m-0 fw-bold text-dark">📑 Chapitre : <?= htmlspecialchars($chap['titre']) ?></h6>
+                                                <small class="text-muted">Professeur : <?= htmlspecialchars($chap['prof_nom'] ?? 'Inconnu') ?></small>
+                                            </div>
+                                            <div>
+                                                <button class="btn btn-sm btn-success" onclick="openAddLeconModal(<?= $chap['id'] ?>)">+ Leçon</button>
+                                                <button class="btn btn-sm btn-warning" onclick='openEditChapModal(<?= htmlspecialchars(json_encode($chap), ENT_QUOTES, 'UTF-8') ?>)' title="Modifier Chapitre">✏️</button>
+                                                <a href="index.php?action=delete_chap&id=<?= $chap['id'] ?>" class="btn btn-sm btn-outline-danger" onclick="return confirm('Supprimer ce chapitre et ses leçons ?')">🗑️</a>
+                                            </div>
+                                        </div>
+                                        <div class="card-body">
+                                            <ul class="list-group">
+                                                <?php if (empty($lecons)): ?>
+                                                <li class="list-group-item text-muted small fst-italic">Aucune leçon rattachée à ce chapitre.</li>
+                                                <?php endif; ?>
+                                                <?php foreach ($lecons as $l): ?>
+                                                <li class="list-group-item">
+                                                    <div class="d-flex justify-content-between align-items-start">
+                                                        <div>
+                                                            <strong><?= htmlspecialchars($l['titre']) ?></strong>
+                                                            <span class="badge bg-info text-dark ms-1"><?= strtoupper(htmlspecialchars($l['type_format'])) ?></span>
+                                                            
+                                                            <?php if (!empty($l['description'])): ?>
+                                                            <p class="mb-1 text-muted small"><em>Consigne : <?= htmlspecialchars($l['description']) ?></em></p>
+                                                            <?php endif; ?>
+                                                        </div>
+                                                        <div>
+                                                            <?php if (!empty($l['fichier'])): ?>
+                                                            <a href="../../uploads/cours_lecons/<?= urlencode($l['fichier']) ?>" target="_blank" class="btn btn-sm btn-primary">📄 Fichier</a>
+                                                            <?php endif; ?>
+                                                            <button class="btn btn-sm btn-warning" onclick='openEditLeconModal(<?= htmlspecialchars(json_encode($l), ENT_QUOTES, 'UTF-8') ?>)' title="Modifier Leçon">✏️</button>
+                                                            <a href="index.php?action=delete_lecon&id=<?= $l['id'] ?>" class="btn btn-sm btn-danger" onclick="return confirm('Supprimer cette leçon ?')">🗑️</a>
+                                                        </div>
+                                                    </div>
+
+                                                    <!-- RÉSUMÉ AVEC SCRIPT VOIR PLUS / VOIR MOINS -->
+                                                    <?php if (!empty($l['contenu'])): 
+                                                        $isLong = mb_strlen($l['contenu']) > 180;
+                                                    ?>
+                                                    <div class="mt-2 p-3 bg-white border rounded">
+                                                        <strong class="text-success d-block mb-1">📝 Résumé du cours :</strong>
+                                                        <div id="resume_box_<?= $l['id'] ?>" class="resume-container small text-dark <?= $isLong ? 'resume-collapsed' : '' ?>" style="white-space: pre-line;"><?= htmlspecialchars($l['contenu']) ?></div>
+                                                        
+                                                        <?php if ($isLong): ?>
+                                                        <button class="btn btn-link btn-sm p-0 mt-1 text-decoration-none fw-bold" onclick="toggleResume(<?= $l['id'] ?>, this)">
+                                                            Voir plus 👇
+                                                        </button>
+                                                        <?php endif; ?>
+                                                    </div>
+                                                    <?php endif; ?>
+
+                                                </li>
+                                                <?php endforeach; ?>
+                                            </ul>
+                                        </div>
+                                    </div>
+                                    <?php endforeach; ?>
+
+                                </div>
+                            </div>
+                        </div>
+                        <?php endforeach; ?>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+        <?php endforeach; ?>
+    </div>
+</div>
+
+<!-- MODAL CRÉATION CHAPITRE -->
+<div class="modal modal-xl fade" id="addChapModal" tabindex="-1">
+    <div class="modal-dialog">
+        <form method="post" class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Ajouter un Chapitre</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body row g-2">
+                <div class="col-12">
+                    <label class="form-label">Titre du chapitre :</label>
+                    <input type="text" name="titre" class="form-control" required>
+                </div>
+                <div class="col-6">
+                    <label class="form-label">Cours :</label>
+                    <select name="cours_id" class="form-select" required>
+                        <?php foreach($cours as $co): ?>
+                        <option value="<?= $co['id'] ?>"><?= htmlspecialchars($co['intitule']) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="col-6">
+                    <label class="form-label">Classe :</label>
+                    <select name="classe_id" class="form-select" required>
+                        <?php foreach($classes as $c): ?>
+                        <option value="<?= $c['id'] ?>"><?= htmlspecialchars($c['description']) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="col-12">
+                    <label class="form-label">Professeur désigné :</label>
+                    <select name="prof_id" class="form-select" required>
+                        <?php foreach($profs as $p): ?>
+                        <option value="<?= $p['id'] ?>"><?= htmlspecialchars($p['nom_complet']) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="submit" name="add_chapitre" class="btn btn-primary">Créer Chapitre</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- MODAL MODIFICATION CHAPITRE -->
+<div class="modal modal-xl fade" id="editChapModal" tabindex="-1">
+    <div class="modal-dialog">
+        <form method="post" class="modal-content">
+            <input type="hidden" name="chapitre_id" id="edit_chapitre_id">
+            <div class="modal-header bg-warning text-dark">
+                <h5 class="modal-title">Modifier le Chapitre</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body row g-2">
+                <div class="col-12">
+                    <label class="form-label">Titre du chapitre :</label>
+                    <input type="text" name="titre" id="edit_chap_titre" class="form-control" required>
+                </div>
+                <div class="col-6">
+                    <label class="form-label">Cours :</label>
+                    <select name="cours_id" id="edit_chap_cours_id" class="form-select" required>
+                        <?php foreach($cours as $co): ?>
+                        <option value="<?= $co['id'] ?>"><?= htmlspecialchars($co['intitule']) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="col-6">
+                    <label class="form-label">Classe :</label>
+                    <select name="classe_id" id="edit_chap_classe_id" class="form-select" required>
+                        <?php foreach($classes as $c): ?>
+                        <option value="<?= $c['id'] ?>"><?= htmlspecialchars($c['description']) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="col-12">
+                    <label class="form-label">Professeur désigné :</label>
+                    <select name="prof_id" id="edit_chap_prof_id" class="form-select" required>
+                        <?php foreach($profs as $p): ?>
+                        <option value="<?= $p['id'] ?>"><?= htmlspecialchars($p['nom_complet']) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button type="submit" name="edit_chapitre" class="btn btn-warning">Mettre à jour</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- MODAL CRÉATION LEÇON -->
+<div class="modal modal-xl fade" id="addLeconModal" tabindex="-1">
+    <div class="modal-dialog">
+        <form method="post" enctype="multipart/form-data" class="modal-content">
+            <input type="hidden" name="chapitre_id" id="modal_chapitre_id">
+            <div class="modal-header">
+                <h5 class="modal-title">Ajouter une Leçon / Résumé</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body row g-2">
+                <div class="col-12">
+                    <label class="form-label">Titre de la leçon :</label>
+                    <input type="text" name="titre" class="form-control" required>
+                </div>
+                <div class="col-12">
+                    <label class="form-label">Format :</label>
+                    <select name="type_format" class="form-select">
+                        <option value="texte">Résumé Texte</option>
+                        <option value="pdf">Document PDF</option>
+                        <option value="video">Vidéo</option>
+                        <option value="audio">Audio</option>
+                        <option value="document">Autre Document</option>
+                    </select>
+                </div>
+                <div class="col-12">
+                    <label class="form-label">Résumé / Contenu texte du cours :</label>
+                    <textarea name="contenu" class="form-control" rows="4" placeholder="Rédiger le résumé du cours ici..."></textarea>
+                </div>
+                <div class="col-12">
+                    <label class="form-label">Fichier joint (Optionnel) :</label>
+                    <input type="file" name="fichier" class="form-control">
+                </div>
+                <div class="col-12">
+                    <label class="form-label">Description / Consignes :</label>
+                    <textarea name="description" class="form-control" rows="2"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="submit" name="add_lecon" class="btn btn-success">Ajouter Leçon</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- MODAL MODIFICATION LEÇON -->
+<div class="modal modal-xl fade" id="editLeconModal" tabindex="-1">
+    <div class="modal-dialog">
+        <form method="post" enctype="multipart/form-data" class="modal-content">
+            <input type="hidden" name="lecon_id" id="edit_lecon_id">
+            <div class="modal-header bg-warning text-dark">
+                <h5 class="modal-title">Modifier la Leçon</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body row g-2">
+                <div class="col-12">
+                    <label class="form-label">Titre de la leçon :</label>
+                    <input type="text" name="titre" id="edit_lecon_titre" class="form-control" required>
+                </div>
+                <div class="col-12">
+                    <label class="form-label">Format :</label>
+                    <select name="type_format" id="edit_lecon_type_format" class="form-select">
+                        <option value="texte">Résumé Texte</option>
+                        <option value="pdf">Document PDF</option>
+                        <option value="video">Vidéo</option>
+                        <option value="audio">Audio</option>
+                        <option value="document">Autre Document</option>
+                    </select>
+                </div>
+                <div class="col-12">
+                    <label class="form-label">Résumé / Contenu texte du cours :</label>
+                    <textarea name="contenu" id="edit_lecon_contenu" class="form-control" rows="4"></textarea>
+                </div>
+                <div class="col-12">
+                    <label class="form-label">Changer le fichier (laisser vide pour conserver l'actuel) :</label>
+                    <input type="file" name="fichier" class="form-control">
+                    <small id="current_file_info" class="text-muted d-block mt-1"></small>
+                </div>
+                <div class="col-12">
+                    <label class="form-label">Description / Consignes :</label>
+                    <textarea name="description" id="edit_lecon_description" class="form-control" rows="2"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button type="submit" name="edit_lecon" class="btn btn-warning">Mettre à jour</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+function openAddLeconModal(chapId) {
+    document.getElementById('modal_chapitre_id').value = chapId;
+    new bootstrap.Modal(document.getElementById('addLeconModal')).show();
+}
+
+function openEditChapModal(chap) {
+    document.getElementById('edit_chapitre_id').value = chap.id;
+    document.getElementById('edit_chap_titre').value = chap.titre;
+    document.getElementById('edit_chap_cours_id').value = chap.cours_id;
+    document.getElementById('edit_chap_classe_id').value = chap.classe_id;
+    document.getElementById('edit_chap_prof_id').value = chap.prof_id;
+    new bootstrap.Modal(document.getElementById('editChapModal')).show();
+}
+
+function openEditLeconModal(lecon) {
+    document.getElementById('edit_lecon_id').value = lecon.id;
+    document.getElementById('edit_lecon_titre').value = lecon.titre;
+    document.getElementById('edit_lecon_type_format').value = lecon.type_format;
+    document.getElementById('edit_lecon_contenu').value = lecon.contenu || '';
+    document.getElementById('edit_lecon_description').value = lecon.description || '';
+
+    const fileInfo = document.getElementById('current_file_info');
+    if (lecon.fichier) {
+        fileInfo.innerHTML = 'Fichier actuel : <strong>' + lecon.fichier + '</strong>';
+    } else {
+        fileInfo.innerHTML = 'Aucun fichier rattaché.';
+    }
+
+    new bootstrap.Modal(document.getElementById('editLeconModal')).show();
+}
+
+function toggleResume(id, btn) {
+    const box = document.getElementById('resume_box_' + id);
+    if (box.classList.contains('resume-collapsed')) {
+        box.classList.remove('resume-collapsed');
+        box.classList.add('resume-expanded');
+        btn.innerHTML = 'Voir moins ☝️';
+    } else {
+        box.classList.remove('resume-expanded');
+        box.classList.add('resume-collapsed');
+        btn.innerHTML = 'Voir plus 👇';
+    }
+}
+</script>
+
+<?php require_once __DIR__.'/../layout/footer.php'; ?>
