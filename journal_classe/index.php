@@ -69,10 +69,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
-    // --- ENREGISTREMENT / MODIFICATION DU RÉSUMÉ ---
+    // --- ENREGISTREMENT / MODIFICATION DU RÉSUMÉ ET DE LA DATE ---
     if (isset($_POST['save_resume'])) {
         $resume_id           = (int)($_POST['resume_id'] ?? 0);
         $journal_id          = (int)$_POST['journal_id'];
+        $jour_date           = $_POST['jour_date'] ?? '';
         $fiche_no            = trim($_POST['fiche_no'] ?? '');
         $type_lecon          = trim($_POST['type_lecon'] ?? '');
         $discipline          = trim($_POST['discipline'] ?? '');
@@ -80,6 +81,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $resume_texte        = trim($_POST['resume_texte'] ?? '');
         $devoir              = trim($_POST['devoir'] ?? '');
         $redirect_classe     = (int)($_POST['redirect_classe_id'] ?? 0);
+
+        // Mise à jour de la date sur le journal associé
+        if ($journal_id > 0 && !empty($jour_date)) {
+            $stmtDate = $pdo->prepare("UPDATE journal_classe SET jour_date = ? WHERE id = ?");
+            $stmtDate->execute([$jour_date, $journal_id]);
+        }
 
         $currentFile = null;
         if ($resume_id > 0) {
@@ -164,7 +171,6 @@ if ($selected_classe > 0) {
     $where  = ["j.anneScolaire = ?", "j.classe_id = ?"];
     $params = [$currentYear, $selected_classe];
 
-    // GESTION DE L'AFFICHAGE (AUJOURD'HUI SEULEMENT PAR DÉFAUT VS VOIR TOUT / FILTRES)
     if (!empty($single_date)) {
         $where[]  = "j.jour_date = ?";
         $params[] = $single_date;
@@ -178,10 +184,8 @@ if ($selected_classe > 0) {
             $params[] = $date_fin;
         }
     } elseif ($show_all) {
-        // Affiche aujourd'hui et tous les jours passés
         $where[] = "j.jour_date <= CURRENT_DATE()";
     } else {
-        // Par défaut: uniquement Aujourd'hui
         $where[] = "j.jour_date = CURRENT_DATE()";
     }
 
@@ -444,15 +448,19 @@ require_once __DIR__.'/../layout/navbar.php';
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body p-4 row g-3">
-                <div class="col-md-4">
+                <div class="col-md-3">
+                    <label class="form-label fw-bold small text-secondary">Date du cours :</label>
+                    <input type="date" name="jour_date" id="res_jour_date" class="form-control rounded-3" required>
+                </div>
+                <div class="col-md-3">
                     <label class="form-label fw-bold small text-secondary">N° Fiche :</label>
                     <input type="text" name="fiche_no" id="res_fiche_no" class="form-control rounded-3">
                 </div>
-                <div class="col-md-4">
+                <div class="col-md-3">
                     <label class="form-label fw-bold small text-secondary">Type Leçon :</label>
                     <input type="text" name="type_lecon" id="res_type_lecon" class="form-control rounded-3">
                 </div>
-                <div class="col-md-4">
+                <div class="col-md-3">
                     <label class="form-label fw-bold small text-secondary">Discipline :</label>
                     <input type="text" name="discipline" id="res_discipline" class="form-control rounded-3">
                 </div>
@@ -634,6 +642,7 @@ document.addEventListener('DOMContentLoaded', function() {
 function openResumeModal(data) {
     document.getElementById('res_resume_id').value = data.resume_id || 0;
     document.getElementById('res_journal_id').value = data.id;
+    document.getElementById('res_jour_date').value = data.jour_date || '';
     document.getElementById('res_fiche_no').value = data.fiche_no || '';
     document.getElementById('res_type_lecon').value = data.type_lecon || '';
     document.getElementById('res_discipline').value = data.discipline || '';

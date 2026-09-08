@@ -5,13 +5,7 @@ declare(strict_types=1);
 require_once __DIR__.'/../includes/auth.php';
 require_directeur();
 
-// Inclusion de l'année scolaire en cours
-// include_once __DIR__.'/../includes/get_annee_en_cours.php';
-
 $annee_en_cours = '2026-2027';
-// if (!isset($annee_en_cours) || empty($annee_en_cours)) {
-//     $annee_en_cours = $_SESSION['annee_scolaire'] ?? date('Y').'-'.(date('Y') + 1);
-// }
 
 $action = $_GET['action'] ?? '';
 $id     = (int)($_GET['id'] ?? 0);
@@ -19,6 +13,7 @@ $id     = (int)($_GET['id'] ?? 0);
 // --- AJOUT D'UN RÉSUMÉ DE COURS ---
 if (isset($_POST['add_resume'])) {
     $journal_id          = (int)$_POST['journal_id'];
+    $jour_date           = $_POST['jour_date'] ?? '';
     $fiche_no            = trim($_POST['fiche_no'] ?? '');
     $domaine             = trim($_POST['domaine'] ?? '');
     $discipline          = trim($_POST['discipline'] ?? '');
@@ -28,6 +23,12 @@ if (isset($_POST['add_resume'])) {
     $resume_texte        = trim($_POST['resume_texte'] ?? '');
     $devoir              = trim($_POST['devoir'] ?? '');
     $piece_jointe        = '';
+
+    // Mettre à jour la date sur le journal associé si elle est renseignée
+    if ($journal_id > 0 && !empty($jour_date)) {
+        $stmtDate = $pdo->prepare("UPDATE journal_classe SET jour_date = ? WHERE id = ?");
+        $stmtDate->execute([$jour_date, $journal_id]);
+    }
 
     if (!empty($_FILES['piece_jointe']['name'])) {
         $uploadDir = __DIR__.'/../../../uploads/attachement_resume_cours/';
@@ -58,6 +59,7 @@ if (isset($_POST['add_resume'])) {
 if (isset($_POST['edit_resume'])) {
     $resume_id           = (int)$_POST['resume_id'];
     $journal_id          = (int)$_POST['journal_id'];
+    $jour_date           = $_POST['jour_date'] ?? '';
     $fiche_no            = trim($_POST['fiche_no'] ?? '');
     $domaine             = trim($_POST['domaine'] ?? '');
     $discipline          = trim($_POST['discipline'] ?? '');
@@ -66,6 +68,12 @@ if (isset($_POST['edit_resume'])) {
     $competence_attendue = trim($_POST['competence_attendue'] ?? '');
     $resume_texte        = trim($_POST['resume_texte'] ?? '');
     $devoir              = trim($_POST['devoir'] ?? '');
+
+    // Mettre à jour la date sur le journal de classe associé
+    if ($journal_id > 0 && !empty($jour_date)) {
+        $stmtDate = $pdo->prepare("UPDATE journal_classe SET jour_date = ? WHERE id = ?");
+        $stmtDate->execute([$jour_date, $journal_id]);
+    }
 
     $stmtFile = $pdo->prepare("SELECT piece_jointe FROM resume_cours WHERE id = ?");
     $stmtFile->execute([$resume_id]);
@@ -124,7 +132,7 @@ $filter_prof   = isset($_GET['prof_id']) && $_GET['prof_id'] !== '' ? (int)$_GET
 // Requête SQL de base
 $sql = "
     SELECT rc.*, 
-           jc.cours_id, jc.classe_id, jc.prof_id,
+           jc.cours_id, jc.classe_id, jc.prof_id, jc.jour_date,
            CONCAT(c.description ,' ', IFNULL(cy.description, '')) AS classe_nom, 
            co.intitule AS cours_nom, 
            CONCAT(u.nom, ' ', u.prenom) AS prof_nom
@@ -188,7 +196,7 @@ $profs    = $pdo->query("SELECT id, CONCAT(nom, ' ', prenom) AS nom_complet FROM
 $classes  = $pdo->query("SELECT classe.id, CONCAT(classe.description ,' ', IFNULL(cy.description, '')) AS description FROM classe LEFT JOIN cycle cy ON cy.id = classe.cycle ORDER BY description")->fetchAll();
 $cours    = $pdo->query("SELECT id, intitule FROM cours ORDER BY intitule")->fetchAll();
 $journaux = $pdo->query("
-    SELECT jc.id, CONCAT('Fiche/Journal #', jc.id, ' - ', co.intitule, ' (', c.description, ')') AS libelle
+    SELECT jc.id, jc.jour_date, CONCAT('Fiche/Journal #', jc.id, ' - ', co.intitule, ' (', c.description, ')') AS libelle
     FROM journal_classe jc
     LEFT JOIN cours co ON co.id = jc.cours_id
     LEFT JOIN classe c ON c.id = jc.classe_id
@@ -361,7 +369,7 @@ require_once __DIR__.'/../layout/navbar.php';
                                                                 📚 Discipline :
                                                                 <?= htmlspecialchars($r['discipline'] ?? 'N/A') ?><br>
                                                                 📅 Date :
-                                                                <?= date('d/m/Y H:i', strtotime($r['created_at'])) ?>
+                                                                <?= !empty($r['jour_date']) ? date('d/m/Y', strtotime($r['jour_date'])) : date('d/m/Y H:i', strtotime($r['created_at'])) ?>
                                                             </small>
 
                                                             <?php if (!empty($r['competence_attendue'])): ?>
@@ -446,7 +454,7 @@ require_once __DIR__.'/../layout/navbar.php';
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body row g-2">
-                <div class="col-md-6">
+                <div class="col-md-4">
                     <label class="form-label fw-bold">Journal de classe associé :</label>
                     <select name="journal_id" class="form-select" required>
                         <option value="">-- Sélectionner un journal --</option>
@@ -454,6 +462,10 @@ require_once __DIR__.'/../layout/navbar.php';
                         <option value="<?= $j['id'] ?>"><?= htmlspecialchars($j['libelle']) ?></option>
                         <?php endforeach; ?>
                     </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label fw-bold">Date du cours :</label>
+                    <input type="date" name="jour_date" value="<?= date('Y-m-d') ?>" class="form-control" required>
                 </div>
                 <div class="col-md-3">
                     <label class="form-label fw-bold">N° Fiche :</label>
@@ -513,13 +525,17 @@ require_once __DIR__.'/../layout/navbar.php';
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body row g-2">
-                <div class="col-md-6">
+                <div class="col-md-4">
                     <label class="form-label fw-bold">Journal de classe associé :</label>
                     <select name="journal_id" id="edit_journal_id" class="form-select" required>
                         <?php foreach($journaux as $j): ?>
                         <option value="<?= $j['id'] ?>"><?= htmlspecialchars($j['libelle']) ?></option>
                         <?php endforeach; ?>
                     </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label fw-bold">Date du cours :</label>
+                    <input type="date" name="jour_date" id="edit_jour_date" class="form-control" required>
                 </div>
                 <div class="col-md-3">
                     <label class="form-label fw-bold">N° Fiche :</label>
@@ -572,6 +588,7 @@ require_once __DIR__.'/../layout/navbar.php';
 function openEditResumeModal(res) {
     document.getElementById('edit_resume_id').value = res.id;
     document.getElementById('edit_journal_id').value = res.journal_id;
+    document.getElementById('edit_jour_date').value = res.jour_date || '';
     document.getElementById('edit_fiche_no').value = res.fiche_no || '';
     document.getElementById('edit_type_lecon').value = res.type_lecon || '';
     document.getElementById('edit_domaine').value = res.domaine || '';
