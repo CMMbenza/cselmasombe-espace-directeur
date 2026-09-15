@@ -173,7 +173,7 @@ function aria_current(string $class): string {
                         <?php $a = is_active(['/cours_chapitre_lecon_resume/'], $uriPath); ?>
                         <li>
                             <a class="dropdown-item <?= $a ?>" href="<?= $BASE ?>/cours_chapitre_lecon_resume/">
-                                Gest. cours
+                                Gest. cours (Résumé)
                             </a>
                         </li>
                         <?php $a = is_active(['/horaires/'], $uriPath); ?>
