@@ -7,6 +7,10 @@ require_directeur(); // session + anti-cache + $pdo + helpers (e, BASE_URL)
 require_once __DIR__ . '/../layout/header.php';
 require_once __DIR__ . '/../layout/navbar.php';
 
+// Vérification du rôle Directeur
+$userRole    = (string)($_SESSION['user']['role'] ?? '');
+$isDirecteur = (strtolower(trim($userRole)) === 'directeur');
+
 $q        = trim((string)($_GET['q'] ?? ''));
 $commune  = trim((string)($_GET['commune'] ?? ''));
 $error    = '';
@@ -81,30 +85,30 @@ try {
       $enfantsG[$mid][] = $e;
     }
 
-    // Paiements (agrégat par ménage) — frais scolaire
-    // On agrège sur la table paiement (pas paiement_detail) pour simplicité.
-    $sqlPay = "
-      SELECT p.menage,
-             SUM(p.montantAPayer) AS total_a_payer,
-             SUM(p.montantPayer)  AS total_paye,
-             SUM(p.resteAPayer)   AS total_reste_col
-      FROM paiement p
-      WHERE p.menage IN ($in)
-      GROUP BY p.menage
-    ";
-    $stmtPay = $pdo->prepare($sqlPay);
-    $stmtPay->execute($ids);
-    while ($p = $stmtPay->fetch(PDO::FETCH_ASSOC)) {
-      $mid = (int)$p['menage'];
-      $total_a_payer = (float)($p['total_a_payer'] ?? 0);
-      $total_paye    = (float)($p['total_paye'] ?? 0);
-      // par sécurité on recalcule le reste
-      $reste_calc    = max(0.0, $total_a_payer - $total_paye);
-      $payG[$mid] = [
-        'a_payer' => $total_a_payer,
-        'paye'    => $total_paye,
-        'reste'   => $reste_calc,
-      ];
+    // Uniquement charger les paiements si c'est un directeur
+    if ($isDirecteur) {
+      $sqlPay = "
+        SELECT p.menage,
+               SUM(p.montantAPayer) AS total_a_payer,
+               SUM(p.montantPayer)  AS total_paye,
+               SUM(p.resteAPayer)   AS total_reste_col
+        FROM paiement p
+        WHERE p.menage IN ($in)
+        GROUP BY p.menage
+      ";
+      $stmtPay = $pdo->prepare($sqlPay);
+      $stmtPay->execute($ids);
+      while ($p = $stmtPay->fetch(PDO::FETCH_ASSOC)) {
+        $mid = (int)$p['menage'];
+        $total_a_payer = (float)($p['total_a_payer'] ?? 0);
+        $total_paye    = (float)($p['total_paye'] ?? 0);
+        $reste_calc    = max(0.0, $total_a_payer - $total_paye);
+        $payG[$mid] = [
+          'a_payer' => $total_a_payer,
+          'paye'    => $total_paye,
+          'reste'   => $reste_calc,
+        ];
+      }
     }
   }
 
@@ -116,7 +120,7 @@ try {
   <div class="d-flex flex-wrap gap-2 justify-content-between align-items-center mb-3">
     <h1 class="h4 mb-0">Ménages</h1>
 
-    <!-- Recherche serveur (globale) -->
+    <!-- Recherche serveur -->
     <form class="row g-2" method="get">
       <div class="col-12 col-md-5">
         <input class="form-control form-control-sm" type="search" name="q"
@@ -166,14 +170,16 @@ try {
             <th>Ménage</th>
             <th>Téléphone</th>
             <th>Adresse</th>
-            <th>Montant à payer (ménage)</th>
+            <?php if ($isDirecteur): ?>
+              <th>Montant à payer (ménage)</th>
+            <?php endif; ?>
             <th>Enfants</th>
             <th style="width:1%;">Action</th>
           </tr>
         </thead>
         <tbody>
         <?php if (!$rows): ?>
-          <tr class="no-data"><td colspan="7"><em>Aucun ménage trouvé.</em></td></tr>
+          <tr class="no-data"><td colspan="<?= $isDirecteur ? '7' : '6' ?>"><em>Aucun ménage trouvé.</em></td></tr>
         <?php else: foreach ($rows as $r):
           $mid       = (int)$r['id'];
           $kids      = $enfantsG[$mid] ?? [];
@@ -190,12 +196,13 @@ try {
 
           $nameLower = mb_strtolower((string)$r['noms'], 'UTF-8');
 
-          // Paiement pour ce menage (agrégat)
-          $agg = $payG[$mid] ?? ['a_payer'=>0.0, 'paye'=>0.0, 'reste'=>0.0];
-          $a_payer = (float)$agg['a_payer'];
-          $paye    = (float)$agg['paye'];
-          $reste   = (float)$agg['reste'];
-          $progress = ($a_payer > 0) ? min(100, max(0, round($paye * 100 / $a_payer))) : 0;
+          if ($isDirecteur) {
+            $agg = $payG[$mid] ?? ['a_payer'=>0.0, 'paye'=>0.0, 'reste'=>0.0];
+            $a_payer = (float)$agg['a_payer'];
+            $paye    = (float)$agg['paye'];
+            $reste   = (float)$agg['reste'];
+            $progress = ($a_payer > 0) ? min(100, max(0, round($paye * 100 / $a_payer))) : 0;
+          }
         ?>
           <tr data-row="menage" data-name="<?= e($nameLower) ?>">
             <td><?= $mid ?></td>
@@ -205,20 +212,22 @@ try {
               <div><?= e(trim($addr)) ?: '—' ?></div>
               <div class="text-muted small"><?= e($addr2) ?: '' ?></div>
             </td>
-            <td><?= e(number_format((float)$r['montantAPayer'], 2, ',', ' ')) ?></td>
+            <?php if ($isDirecteur): ?>
+              <td><?= e(number_format((float)$r['montantAPayer'], 2, ',', ' ')) ?></td>
+            <?php endif; ?>
             <td><span class="badge text-bg-secondary"><?= $nbKids ?></span></td>
             <td class="text-nowrap">
-              <a class="btn btn-sm btn-outline-primary"
-   href="<?= BASE_URL ?>/menages/show.php?id=<?= (int)$mid ?>">
-  Voir
-</a>
-
+              <a class="btn btn-sm btn-outline-primary" href="<?= BASE_URL ?>/menages/show.php?id=<?= (int)$mid ?>">
+                Voir
+              </a>
             </td>
           </tr>
 
           <tr class="collapse" id="<?= $collapseId ?>" data-row="children" data-parent="<?= $mid ?>">
-            <td colspan="7">
-              <!-- Modalité de paiement (scolarité) -->
+            <td colspan="<?= $isDirecteur ? '7' : '6' ?>">
+              
+              <?php if ($isDirecteur): ?>
+              <!-- Modalité de paiement (Frais scolaire) - Réservé aux directeurs -->
               <div class="card border-0 shadow-sm mb-3">
                 <div class="card-body">
                   <div class="d-flex flex-wrap align-items-center justify-content-between">
@@ -250,11 +259,9 @@ try {
                       </div>
                     </div>
                   </div>
-                  <div class="form-text mt-2">
-                    * Agrégation basée sur la table <code>paiement</code> (colonnes <code>montantAPayer</code>, <code>montantPayer</code>).
-                  </div>
                 </div>
               </div>
+              <?php endif; ?>
 
               <!-- Enfants -->
               <?php if (!$kids): ?>
@@ -305,7 +312,6 @@ try {
 <?php require_once __DIR__ . '/../layout/footer.php'; ?>
 
 <script>
-// Recherche instantanée par nom (client-side)
 (function(){
   const input = document.getElementById('filterName');
   const btnClear = document.getElementById('btnClearFilter');
@@ -331,7 +337,6 @@ try {
 
       tr.style.display = show ? '' : 'none';
 
-      // Masquer la ligne enfants si le parent est caché
       const child = document.querySelector(`tr[data-row="children"][data-parent="${mid}"]`);
       if (child) {
         if (!show) {

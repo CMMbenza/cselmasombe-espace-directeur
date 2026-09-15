@@ -1,5 +1,5 @@
 <?php
-// index.php — Login Directeur
+// index.php — Connexion
 declare(strict_types=1);
 if (session_status() === PHP_SESSION_NONE) session_start();
 
@@ -7,7 +7,7 @@ require_once __DIR__.'/config/app.php';
 require_once __DIR__.'/config/db.php';
 require_once __DIR__.'/includes/helpers.php';
 
-/* Anti-cache sur l'écran de login aussi (évite les artefacts back/forward) */
+/* Anti-cache sur l'écran de login */
 send_nocache_headers();
 
 /** Détecte si une chaîne ressemble à un hash password_* */
@@ -35,10 +35,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt->execute([':u' => $username]);
         $rows = $stmt->fetchAll();
 
-        $rows = array_values(array_filter($rows, fn($r) => norm_role($r['role']) === REQUIRED_ROLE_NORM));
-
         if (!$rows) {
-            $error = "Accès refusé : ce module est réservé au Directeur.";
+            $error = "Identifiants incorrects.";
         } else {
             $matched = null;
 
@@ -68,12 +66,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             if ($matched) {
                 session_regenerate_id(true);
+
                 $_SESSION['user'] = [
                     'id'       => (int)$matched['id'],
                     'username' => (string)$matched['username'],
                     'role'     => (string)$matched['role'],
                 ];
-                redirect('dashboard.php');
+
+                // Redirection selon le rôle connecté
+                $userRole = norm_role($matched['role']);
+                // if ($userRole !== 'directeur') {
+                //     redirect('dashboard-direction.php');
+                // } else {
+                    redirect('dashboard.php');
+                // }
             } else {
                 $error = "Identifiants incorrects.";
             }
@@ -85,105 +91,142 @@ require_once __DIR__.'/layout/header.php';
 ?>
 
 <style>
+/* Structure globale avec fond totalement blanc */
+html, body {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    background-color: #ffffff;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
 body {
-    background: #f5f7fa;
+    display: flex;
+    flex-direction: column;
     min-height: 100vh;
-    align-items: center;
-    justify-content: center;
 }
 
-.card {
-    border-radius: 15px;
-    border: none;
-    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
-}
-
-.card-body h1 {
-    font-weight: 600;
-    color: #333;
-}
-
-.form-control {
-    border-radius: 10px;
-    padding: 0.75rem 1rem;
-    transition: all 0.3s;
-}
-
-.form-control:focus {
-    border-color: #4e73df;
-    box-shadow: 0 0 8px rgba(78, 115, 223, 0.3);
-}
-
-.btn-primary {
-    /* background: linear-gradient(90deg, #4e73df 0%, #1cc88a 100%); */
-    border: none;
-    border-radius: 10px;
-    font-weight: 600;
-    transition: all 0.3s;
-}
-
-.btn-primary:hover {
-    /* background: linear-gradient(90deg, #1cc88a 0%, #4e73df 100%); */
-    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
-}
-
-.alert-danger {
-    border-radius: 10px;
-    font-size: 0.9rem;
-}
-
-.small-text-muted {
-    color: #6c757d;
-    font-size: 0.85rem;
-}
-
-.show-pass-container {
+.main-wrapper {
+    flex: 1 0 auto;
     display: flex;
     align-items: center;
+    justify-content: center;
+    padding: 2.5rem 1rem;
+}
+
+.login-card {
+    border-radius: 20px;
+    border: 1px solid #e2e8f0;
+    background: #ffffff;
+    box-shadow: 0 15px 35px rgba(0, 0, 0, 0.05);
+    overflow: hidden;
+    width: 100%;
+}
+
+.login-header {
+    background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+    color: #ffffff;
+    padding: 2.5rem 2rem 2rem 2rem;
+    text-align: center;
+}
+
+.login-icon {
+    width: 60px;
+    height: 60px;
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.8rem;
     margin-bottom: 1rem;
 }
 
-.show-pass-container input[type="checkbox"] {
-    margin-right: 0.5rem;
+.form-control {
+    border-radius: 12px;
+    padding: 0.8rem 1.2rem;
+    border: 1.5px solid #e2e8f0;
+    font-size: 0.95rem;
+    transition: all 0.2s ease;
+}
+
+.form-control:focus {
+    border-color: #2563eb;
+    box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.15);
+}
+
+.btn-primary {
+    background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+    border: none;
+    border-radius: 12px;
+    padding: 0.85rem;
+    font-weight: 600;
+    font-size: 1rem;
+    letter-spacing: 0.3px;
+    transition: all 0.3s ease;
+}
+
+.btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(37, 99, 235, 0.35);
+    background: linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%);
+}
+
+.form-check-input:checked {
+    background-color: #2563eb;
+    border-color: #2563eb;
+}
+
+.alert-danger {
+    border-radius: 12px;
+    border: none;
+    background-color: #fef2f2;
+    color: #991b1b;
+    font-size: 0.9rem;
 }
 </style>
 
-<div class="container py-5">
-    <div class="row justify-content-center">
-        <div class="col-sm-10 col-md-6 col-lg-6">
-            <div class="card shadow-sm">
-                <div class="card-body">
-                    <h1 class="h4 mb-3 text-center">Connexion (Directeur)</h1>
-                    <p class="text-center text-muted small">Veuillez entrer votre mot de passe pour accéder à votre
-                        espace Directeur.</p>
-                    <?php if ($error): ?>
-                    <div class="alert alert-danger py-2"><?= e($error) ?></div>
-                    <?php endif; ?>
-                    <form method="post" autocomplete="off">
-                        <div class="mb-3 d-none">
-                            <label class="form-label">Nom d'utilisateur</label>
-                            <input type="text" name="username" id="username" class="form-control" required
-                                placeholder="Entrez votre nom d'utilisateur" value="cs elma">
+<div class="main-wrapper">
+    <div class="container">
+        <div class="row justify-content-center">
+            <div class="col-sm-10 col-md-7 col-lg-5">
+                <div class="card login-card">
+                    <div class="login-header">
+                        <div class="login-icon">
+                            🎓
                         </div>
-                        <div class="mb-3">
-                            <label class="form-label">Mot de passe</label>
-                            <input type="password" name="password" id="password" class="form-control" required
-                                placeholder="Entrez votre mot de passe">
+                        <h1 class="h4 fw-bold mb-1">Espace de Connexion</h1>
+                        <p class="mb-0 text-white-50 small">Veuillez vous authentifier pour continuer</p>
+                    </div>
+                    <div class="card-body p-4 p-md-5">
+                        <?php if ($error): ?>
+                        <div class="alert alert-danger p-3 mb-4 d-flex align-items-center">
+                            <span class="me-2">⚠️</span>
+                            <div><?= e($error) ?></div>
                         </div>
+                        <?php endif; ?>
 
-                        <!-- Checkbox show/hide -->
-                        <div class="show-pass-container">
-                            <input type="checkbox" id="showPassword">
-                            <label for="showPassword" class="mb-0">Afficher le mot de passe</label>
-                        </div>
+                        <form method="post" autocomplete="off">
+                            <div class="mb-3 d-none">
+                                <label class="form-label fw-semibold text-secondary">Nom d'utilisateur</label>
+                                <input type="text" name="username" id="username" class="form-control" required value="cs elma">
+                            </div>
 
-                        <button class="btn btn-primary w-100">Se connecter</button>
-                        <!-- <p class="text-center text-muted small mt-2">Assurez-vous de garder votre mot de passe
-                            confidentiel.</p> -->
-                    </form>
+                            <div class="mb-4">
+                                <label class="form-label fw-semibold text-secondary">Mot de passe</label>
+                                <input type="password" name="password" id="password" class="form-control" required placeholder="Saisissez votre mot de passe">
+                            </div>
+
+                            <div class="form-check mb-4">
+                                <input type="checkbox" class="form-check-input" id="showPassword">
+                                <label class="form-check-label text-muted small" for="showPassword">Afficher le mot de passe</label>
+                            </div>
+
+                            <button type="submit" class="btn btn-primary w-100 mb-2">Se connecter</button>
+                        </form>
+                    </div>
                 </div>
             </div>
-            <!-- <p class="text-center small-text-muted mt-3">Accès réservé au rôle “Directeur”.</p> -->
         </div>
     </div>
 </div>
@@ -191,11 +234,7 @@ body {
 <script>
 document.getElementById('showPassword').addEventListener('change', function() {
     const passField = document.getElementById('password');
-    if (this.checked) {
-        passField.type = 'text';
-    } else {
-        passField.type = 'password';
-    }
+    passField.type = this.checked ? 'text' : 'password';
 });
 </script>
 

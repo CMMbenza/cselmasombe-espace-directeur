@@ -177,16 +177,10 @@ require_once __DIR__.'/../layout/navbar.php';
     <div class="alert alert-danger"><?= htmlspecialchars($error_msg) ?></div>
     <?php endif; ?>
 
-    <!-- <div class="d-flex justify-content-between align-items-center mb-3">
-        <h4>📅 Horaire & Examens (<?= htmlspecialchars(ANNEE_SCOLAIRE_LIBELLE) ?>)</h4>
-        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addHoraireModal">+ Programmer des créneaux</button>
-    </div> -->
-
     <div class="d-flex justify-content-between align-items-center mb-3">
         <h4>📅 Horaire & Examens (<?= htmlspecialchars(ANNEE_SCOLAIRE_LIBELLE) ?>)</h4>
-        <a href="add-horaire-des-classes.php" class="btn btn-primary fw-bold">
-            ⚡ Créer/Générer l'horaire d'une classe
-        </a>
+        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addHoraireModal">+ Programmer des
+            créneaux</button>
     </div>
 
     <!-- FILTRE DE CONSULTATION -->
@@ -230,6 +224,7 @@ require_once __DIR__.'/../layout/navbar.php';
                         <th>Type</th>
                         <th>Cours</th>
                         <th>Classe</th>
+                        <!-- <th>Date Précise</th> -->
                         <th>Heure</th>
                         <th>Professeur</th>
                         <th></th>
@@ -238,7 +233,7 @@ require_once __DIR__.'/../layout/navbar.php';
                 <tbody>
                     <?php if (empty($horaires)): ?>
                     <tr>
-                        <td colspan="7" class="py-4 text-muted text-center">Aucun horaire programmé.</td>
+                        <td colspan="8" class="py-4 text-muted">Aucun horaire programmé.</td>
                     </tr>
                     <?php endif; ?>
                     <?php foreach ($horaires as $h): ?>
@@ -246,6 +241,7 @@ require_once __DIR__.'/../layout/navbar.php';
                         <td class="fw-bold"><?= htmlspecialchars($h['jour_semaine']) ?></td>
                         <td>
                             <?php 
+                                // Formatage du texte à afficher dans le badge
                                 $displayType = $h['type'];
                                 if (in_array($h['type'], ['Interrogation', 'Examen'], true) && !empty($h['date_evenement'])) {
                                     $displayType .= ' ' . date('d/m/Y', strtotime($h['date_evenement']));
@@ -258,7 +254,16 @@ require_once __DIR__.'/../layout/navbar.php';
                         </td>
                         <td><?= htmlspecialchars($h['cours_nom'] ?? 'N/A') ?></td>
                         <td><?= htmlspecialchars($h['classe_nom'] ?? 'N/A') ?></td>
+                        <td class="d-none">
+                            <?php if (in_array($h['type'], ['Interrogation', 'Examen'], true) && !empty($h['date_evenement'])): ?>
+                            <span
+                                class="badge bg-light text-dark"><?= date('d/m/Y', strtotime($h['date_evenement'])) ?></span>
+                            <?php else: ?>
+                            <span class="text-muted">-</span>
+                            <?php endif; ?>
+                        </td>
                         <td><?= substr($h['heure_debut'], 0, 5) ?> - <?= substr($h['heure_fin'], 0, 5) ?></td>
+
                         <td><?= htmlspecialchars($h['prof_nom'] ?? 'N/A') ?></td>
                         <td>
                             <button type="button" class="btn btn-sm btn-warning me-1"
@@ -357,12 +362,12 @@ require_once __DIR__.'/../layout/navbar.php';
     </div>
 </div>
 
-<!-- MODAL CRÉATION DYNAMIQUE & AUTOMATIQUE -->
+<!-- MODAL CRÉATION DYNAMIQUE -->
 <div class="modal fade" id="addHoraireModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-xl">
         <form method="post" class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">Génération & Programation des créneaux</h5>
+                <h5 class="modal-title">Ajout multiple de créneaux</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body p-3">
@@ -370,7 +375,7 @@ require_once __DIR__.'/../layout/navbar.php';
                 <!-- SELECTION GLOBALE : CLASSE & TYPE -->
                 <div class="card card-body bg-light border-0 mb-3 shadow-sm">
                     <div class="row g-3 align-items-center">
-                        <div class="col-md-5">
+                        <div class="col-md-6">
                             <label class="form-label fw-bold">Sélectionner la Classe :</label>
                             <select name="global_classe_id" id="global_classe_id" class="form-select form-select-lg"
                                 required onchange="onGlobalClasseChange()">
@@ -380,7 +385,7 @@ require_once __DIR__.'/../layout/navbar.php';
                                 <?php endforeach; ?>
                             </select>
                         </div>
-                        <div class="col-md-4">
+                        <div class="col-md-6">
                             <label class="form-label fw-bold">Type de Créneaux :</label>
                             <select name="global_type" id="global_type" class="form-select form-select-lg" required
                                 onchange="onGlobalTypeChange()">
@@ -388,11 +393,6 @@ require_once __DIR__.'/../layout/navbar.php';
                                 <option value="Interrogation">Interrogation</option>
                                 <option value="Examen">Examen</option>
                             </select>
-                        </div>
-                        <div class="col-md-3 d-flex align-items-end">
-                            <button type="button" class="btn btn-warning btn-lg w-100 fw-bold" id="auto-generate-btn">
-                                ⚡ Auto-Générer
-                            </button>
                         </div>
                     </div>
                 </div>
@@ -417,12 +417,12 @@ require_once __DIR__.'/../layout/navbar.php';
                     </table>
                 </div>
                 <button type="button" class="btn btn-outline-success btn-sm mt-2" id="add-row-btn">
-                    ➕ Ajouter un créneau manuellement
+                    ➕ Ajouter un créneau
                 </button>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
-                <button type="submit" name="add_horaires" class="btn btn-primary">Enregistrer tout l'horaire</button>
+                <button type="submit" name="add_horaires" class="btn btn-primary">Enregistrer tout</button>
             </div>
         </form>
     </div>
@@ -435,55 +435,31 @@ document.addEventListener('DOMContentLoaded', function() {
     // Structure JSON envoyée par PHP
     const classeDataMap = <?= json_encode($mappingClasseData) ?>;
 
-    // Plages horaires standards d'une journée d'école
-    $timeSlots = [{
-            debut: "08:00",
-            fin: "09:00"
-        },
-        {
-            debut: "09:00",
-            fin: "10:00"
-        },
-        {
-            debut: "10:15",
-            fin: "11:15"
-        },
-        {
-            debut: "11:15",
-            fin: "12:15"
-        },
-        {
-            debut: "12:30",
-            fin: "13:30"
-        }
-    ];
-
-    $joursSemaine = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi"];
-
-    function addRow(dataPreset = null) {
+    function addRow() {
         const container = document.getElementById('rows-container');
         const tr = document.createElement('tr');
         tr.id = `row-${rowIndex}`;
         const currentIndex = rowIndex;
 
-        const selectedJour = dataPreset ? dataPreset.jour : "Lundi";
-        const selectedDebut = dataPreset ? dataPreset.heure_debut : "08:00";
-        const selectedFin = dataPreset ? dataPreset.heure_fin : "09:00";
-
         tr.innerHTML = `
             <td>
                 <select name="horaires[${currentIndex}][jour_semaine]" class="form-select form-select-sm" required>
-                    ${$joursSemaine.concat(["Samedi"]).map(j => `<option value="${j}" ${j === selectedJour ? 'selected' : ''}>${j}</option>`).join('')}
+                    <option value="Lundi">Lundi</option>
+                    <option value="Mardi">Mardi</option>
+                    <option value="Mercredi">Mercredi</option>
+                    <option value="Jeudi">Jeudi</option>
+                    <option value="Vendredi">Vendredi</option>
+                    <option value="Samedi">Samedi</option>
                 </select>
             </td>
             <td>
                 <input type="date" name="horaires[${currentIndex}][date_evenement]" id="date-${currentIndex}" class="form-control form-select-sm" disabled>
             </td>
             <td>
-                <input type="time" name="horaires[${currentIndex}][heure_debut]" class="form-control form-select-sm" required value="${selectedDebut}">
+                <input type="time" name="horaires[${currentIndex}][heure_debut]" class="form-control form-select-sm" required value="08:00">
             </td>
             <td>
-                <input type="time" name="horaires[${currentIndex}][heure_fin]" class="form-control form-select-sm" required value="${selectedFin}">
+                <input type="time" name="horaires[${currentIndex}][heure_fin]" class="form-control form-select-sm" required value="09:00">
             </td>
             <td>
                 <select name="horaires[${currentIndex}][cours_id]" id="cours-${currentIndex}" class="form-select form-select-sm" required>
@@ -501,13 +477,12 @@ document.addEventListener('DOMContentLoaded', function() {
         `;
 
         container.appendChild(tr);
-        populateRowSelects(currentIndex, dataPreset ? dataPreset.cours_id : null, dataPreset ? dataPreset
-            .prof_id : null);
+        populateRowSelects(currentIndex);
         updateDateFieldState(currentIndex);
         rowIndex++;
     }
 
-    function populateRowSelects(index, selectedCoursId = null, selectedProfId = null) {
+    function populateRowSelects(index) {
         const globalClasseId = document.getElementById('global_classe_id').value;
         const coursSelect = document.getElementById(`cours-${index}`);
         const profSelect = document.getElementById(`prof-${index}`);
@@ -522,10 +497,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
             if (data.cours && data.cours.length > 0) {
                 data.cours.forEach(c => {
-                    const selected = selectedCoursId && parseInt(selectedCoursId) === parseInt(c.id) ?
-                        'selected' : '';
-                    coursSelect.innerHTML +=
-                        `<option value="${c.id}" ${selected}>${c.intitule}</option>`;
+                    coursSelect.innerHTML += `<option value="${c.id}">${c.intitule}</option>`;
                 });
             } else {
                 coursSelect.innerHTML = '<option value="">Aucun cours trouvé</option>';
@@ -533,10 +505,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
             if (data.profs && data.profs.length > 0) {
                 data.profs.forEach(p => {
-                    const selected = selectedProfId && parseInt(selectedProfId) === parseInt(p
-                        .agent_id) ? 'selected' : '';
-                    profSelect.innerHTML +=
-                        `<option value="${p.agent_id}" ${selected}>${p.prof_nom}</option>`;
+                    profSelect.innerHTML += `<option value="${p.agent_id}">${p.prof_nom}</option>`;
                 });
             } else {
                 profSelect.innerHTML = '<option value="">Aucun prof affecté</option>';
@@ -559,53 +528,6 @@ document.addEventListener('DOMContentLoaded', function() {
             dateInput.value = '';
         }
     }
-
-    // --- GENERATEUR AUTOMATIQUE D'HORAIRE ---
-    document.getElementById('auto-generate-btn').addEventListener('click', function() {
-        const globalClasseId = document.getElementById('global_classe_id').value;
-
-        if (!globalClasseId) {
-            alert('Veuillez d\'abord choisir une classe !');
-            return;
-        }
-
-        const data = classeDataMap[globalClasseId];
-
-        if (!data || !data.cours || data.cours.length === 0) {
-            alert('Aucun cours disponible pour cette classe.');
-            return;
-        }
-
-        // Vider les lignes actuelles
-        document.getElementById('rows-container').innerHTML = '';
-        rowIndex = 0;
-
-        let coursList = [...data.cours];
-        let profsList = data.profs || [];
-
-        let coursIndex = 0;
-
-        // Répartir les cours sur les jours et plages horaires
-        $joursSemaine.forEach(jour => {
-            $timeSlots.forEach(slot => {
-                if (coursList.length > 0) {
-                    const currentCours = coursList[coursIndex % coursList.length];
-                    const currentProf = profsList.length > 0 ? profsList[coursIndex %
-                        profsList.length].agent_id : null;
-
-                    addRow({
-                        jour: jour,
-                        heure_debut: slot.debut,
-                        heure_fin: slot.fin,
-                        cours_id: currentCours.id,
-                        prof_id: currentProf
-                    });
-
-                    coursIndex++;
-                }
-            });
-        });
-    });
 
     window.onGlobalClasseChange = function() {
         const rows = document.querySelectorAll('#rows-container tr');
@@ -640,6 +562,7 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('edit_heure_fin').value = data.heure_fin.substr(0, 5);
         document.getElementById('edit_date_evenement').value = data.date_evenement || '';
 
+        // Peupler et présélectionner cours & enseignant
         populateEditSelects(data.classe_id, data.cours_id, data.prof_id);
         updateEditDateFieldState();
 
@@ -702,7 +625,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     document.getElementById('add-row-btn').addEventListener('click', addRow);
 
-    // Ligne initiale par défaut
+    // Ligne initiale
     addRow();
 });
 </script>
