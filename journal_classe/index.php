@@ -29,7 +29,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (isset($_POST['add_journal'])) {
             $piece_jointe = null;
             if (isset($_FILES['piece_jointe']) && $_FILES['piece_jointe']['error'] === UPLOAD_ERR_OK) {
-                $uploadDir = __DIR__ . '/../uploads/attachement_journal_de_class/';
+                $uploadDir = __DIR__ . '../../uploads/attachement_journal_de_class/';
                 if (!is_dir($uploadDir)) mkdir($uploadDir, 0777, true);
                 $filename = time() . '_' . basename($_FILES['piece_jointe']['name']);
                 if (move_uploaded_file($_FILES['piece_jointe']['tmp_name'], $uploadDir . $filename)) {
@@ -53,7 +53,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $currentFile = $stmtFile->fetchColumn();
 
             if (isset($_FILES['piece_jointe']) && $_FILES['piece_jointe']['error'] === UPLOAD_ERR_OK) {
-                $uploadDir = __DIR__ . '/../uploads/attachement_journal_de_class/';
+                $uploadDir = __DIR__ . '/../../uploads/attachement_journal_de_class/';
                 if (!is_dir($uploadDir)) mkdir($uploadDir, 0777, true);
                 $filename = time() . '_' . basename($_FILES['piece_jointe']['name']);
                 if (move_uploaded_file($_FILES['piece_jointe']['tmp_name'], $uploadDir . $filename)) {
@@ -170,7 +170,7 @@ if ($action === 'delete' && $id > 0) {
     $stmtFile = $pdo->prepare("SELECT piece_jointe FROM journal_classe WHERE id = ?");
     $stmtFile->execute([$id]);
     $fileToDelete = $stmtFile->fetchColumn();
-    if ($fileToDelete) @unlink(__DIR__ . '/../uploads/attachement_journal_de_class/' . $fileToDelete);
+    if ($fileToDelete) @unlink(__DIR__ . '/../../uploads/attachement_journal_de_class/' . $fileToDelete);
 
     $stmtResFile = $pdo->prepare("SELECT id, piece_jointe FROM resume_cours WHERE journal_id = ?");
     $stmtResFile->execute([$id]);
@@ -445,7 +445,7 @@ require_once __DIR__.'/../layout/navbar.php';
 
                         <td>
                             <?php if (!empty($j['piece_jointe'])): ?>
-                            <a href="../uploads/attachement_journal_de_class/<?= urlencode($j['piece_jointe']) ?>"
+                            <a href="../../uploads/attachement_journal_de_class/<?= urlencode($j['piece_jointe']) ?>"
                                 target="_blank" class="btn btn-sm btn-outline-secondary rounded-pill px-3">📎 Voir</a>
                             <?php else: ?>
                             <span class="text-muted small">-</span>
