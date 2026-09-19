@@ -10,9 +10,6 @@ $id     = (int)($_GET['id'] ?? 0);
 $msg    = $_GET['msg'] ?? '';
 $currentYear = ANNEE_SCOLAIRE_LIBELLE;
 
-// Date du jour au format YYYY-MM-DD
-$today = date('Y-m-d');
-
 // --- ACTIONS SUR LE JOURNAL DE CLASSE & RÉSUMÉS ---
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
@@ -29,7 +26,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (isset($_POST['add_journal'])) {
             $piece_jointe = null;
             if (isset($_FILES['piece_jointe']) && $_FILES['piece_jointe']['error'] === UPLOAD_ERR_OK) {
-                $uploadDir = __DIR__ . '../../uploads/attachement_journal_de_class/';
+                $uploadDir = __DIR__ . '/../uploads/attachement_journal_de_class/';
                 if (!is_dir($uploadDir)) mkdir($uploadDir, 0777, true);
                 $filename = time() . '_' . basename($_FILES['piece_jointe']['name']);
                 if (move_uploaded_file($_FILES['piece_jointe']['tmp_name'], $uploadDir . $filename)) {
@@ -53,7 +50,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $currentFile = $stmtFile->fetchColumn();
 
             if (isset($_FILES['piece_jointe']) && $_FILES['piece_jointe']['error'] === UPLOAD_ERR_OK) {
-                $uploadDir = __DIR__ . '/../../uploads/attachement_journal_de_class/';
+                $uploadDir = __DIR__ . '/../uploads/attachement_journal_de_class/';
                 if (!is_dir($uploadDir)) mkdir($uploadDir, 0777, true);
                 $filename = time() . '_' . basename($_FILES['piece_jointe']['name']);
                 if (move_uploaded_file($_FILES['piece_jointe']['tmp_name'], $uploadDir . $filename)) {
@@ -122,10 +119,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// --- SUPPRESSION UNIQUE DE LA LEÇON / RÉSUMÉ ---
+// --- SUPPRESSION UNIQUE DE LA LEÇON / RÉSUMÉ (LE JOURNAL EST CONSERVÉ) ---
 if ($action === 'delete_resume' && $id > 0) {
     $target_classe = (int)($_GET['classe_id'] ?? 0);
     
+    // 1. Suppression du fichier joint lié à la leçon si existant
     $stmtFile = $pdo->prepare("SELECT piece_jointe FROM resume_cours WHERE id = ?");
     $stmtFile->execute([$id]);
     $fileToDelete = $stmtFile->fetchColumn();
@@ -133,6 +131,7 @@ if ($action === 'delete_resume' && $id > 0) {
         @unlink(__DIR__ . '/../uploads/attachement_resume_cours/' . $fileToDelete);
     }
 
+    // 2. Suppression stricte de l'enregistrement dans la table resume_cours uniquement
     $stmt = $pdo->prepare("DELETE FROM resume_cours WHERE id = ?");
     $stmt->execute([$id]);
 
@@ -144,14 +143,9 @@ if ($action === 'delete_resume' && $id > 0) {
 if ($action === 'valider_tout') {
     $target_classe = (int)($_GET['classe_id'] ?? 0);
     if ($target_classe > 0) {
-        $stmt = $pdo->prepare("UPDATE journal_classe SET statut = 'valider' WHERE anneScolaire = ? AND classe_id = ? AND statut = 'en attente' AND jour_date = ?");
-        $stmt->execute([$currentYear, $target_classe, $today]);
+        $stmt = $pdo->prepare("UPDATE journal_classe SET statut = 'valider' WHERE anneScolaire = ? AND classe_id = ? AND statut = 'en attente' AND jour_date <= CURRENT_DATE()");
+        $stmt->execute([$currentYear, $target_classe]);
         header("Location: index.php?classe_id=$target_classe&msg=all_validated");
-        exit();
-    } else {
-        $stmt = $pdo->prepare("UPDATE journal_classe SET statut = 'valider' WHERE anneScolaire = ? AND statut = 'en attente' AND jour_date = ?");
-        $stmt->execute([$currentYear, $today]);
-        header("Location: index.php?msg=all_validated");
         exit();
     }
 }
@@ -164,14 +158,17 @@ if ($action === 'change_statut' && $id > 0 && isset($_GET['new_statut'])) {
     exit();
 }
 
+// Suppression complète du journal ET de sa leçon associée
 if ($action === 'delete' && $id > 0) {
     $target_classe = (int)($_GET['classe_id'] ?? 0);
     
+    // Supprimer le fichier joint du journal
     $stmtFile = $pdo->prepare("SELECT piece_jointe FROM journal_classe WHERE id = ?");
     $stmtFile->execute([$id]);
     $fileToDelete = $stmtFile->fetchColumn();
-    if ($fileToDelete) @unlink(__DIR__ . '/../../uploads/attachement_journal_de_class/' . $fileToDelete);
+    if ($fileToDelete) @unlink(__DIR__ . '/../uploads/attachement_journal_de_class/' . $fileToDelete);
 
+    // Supprimer aussi le résumé associé
     $stmtResFile = $pdo->prepare("SELECT id, piece_jointe FROM resume_cours WHERE journal_id = ?");
     $stmtResFile->execute([$id]);
     $resData = $stmtResFile->fetch(PDO::FETCH_ASSOC);
@@ -197,68 +194,65 @@ $statut_filter   = $_GET['statut'] ?? '';
 $single_date     = $_GET['single_date'] ?? '';
 $date_debut      = $_GET['date_debut'] ?? '';
 $date_fin        = $_GET['date_fin'] ?? '';
-$view_all        = isset($_GET['view_all']) && $_GET['view_all'] == '1';
+$show_all        = isset($_GET['all']) && $_GET['all'] === '1';
 
-// CONSTRUCTION DE LA REQUÊTE SQL
-$where  = ["j.anneScolaire = ?"];
-$params = [$currentYear];
-
+$journals = [];
 if ($selected_classe > 0) {
-    $where[]  = "j.classe_id = ?";
-    $params[] = $selected_classe;
-}
+    $where  = ["j.anneScolaire = ?", "j.classe_id = ?"];
+    $params = [$currentYear, $selected_classe];
 
-if (!empty($single_date)) {
-    $where[]  = "j.jour_date = ?";
-    $params[] = $single_date;
-} elseif (!empty($date_debut) || !empty($date_fin)) {
-    if (!empty($date_debut)) {
-        $where[]  = "j.jour_date >= ?";
-        $params[] = $date_debut;
+    if (!empty($single_date)) {
+        $where[]  = "j.jour_date = ?";
+        $params[] = $single_date;
+    } elseif (!empty($date_debut) || !empty($date_fin)) {
+        if (!empty($date_debut)) {
+            $where[]  = "j.jour_date >= ?";
+            $params[] = $date_debut;
+        }
+        if (!empty($date_fin)) {
+            $where[]  = "j.jour_date <= ?";
+            $params[] = $date_fin;
+        }
+    } elseif ($show_all) {
+        $where[] = "j.jour_date <= CURRENT_DATE()";
+    } else {
+        $where[] = "j.jour_date = CURRENT_DATE()";
     }
-    if (!empty($date_fin)) {
-        $where[]  = "j.jour_date <= ?";
-        $params[] = $date_fin;
+
+    if ($statut_filter !== '') {
+        $where[]  = "j.statut = ?";
+        $params[] = $statut_filter;
     }
-} elseif (!$view_all) {
-    // PAR DÉFAUT (si on n'a pas cliqué sur Voir Tout) : Uniquement aujourd'hui
-    $where[]  = "j.jour_date = ?";
-    $params[] = $today;
+
+    $sql = "
+        SELECT j.*, 
+               CONCAT(u.nom, ' ', u.prenom) AS prof_nom,
+               CONCAT(c.description ,' ', IFNULL(cy.description, '')) AS classe_nom,
+               co.intitule AS cours_nom,
+               rc.id AS resume_id,
+               rc.fiche_no,
+               rc.domaine,
+               rc.discipline,
+               rc.titre_lecon,
+               rc.type_lecon,
+               rc.competence_attendue,
+               rc.resume_texte,
+               rc.devoir,
+               rc.piece_jointe AS resume_piece_jointe
+        FROM journal_classe j
+        LEFT JOIN agent u ON u.id = j.prof_id
+        LEFT JOIN classe c ON c.id = j.classe_id
+        LEFT JOIN cycle cy ON cy.id = c.cycle
+        LEFT JOIN cours co ON co.id = j.cours_id
+        LEFT JOIN resume_cours rc ON rc.journal_id = j.id
+        WHERE " . implode(" AND ", $where) . "
+        ORDER BY j.jour_date DESC, j.id DESC
+    ";
+
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
+    $journals = $stmt->fetchAll(PDO::FETCH_ASSOC);
 }
-
-if ($statut_filter !== '') {
-    $where[]  = "j.statut = ?";
-    $params[] = $statut_filter;
-}
-
-$sql = "
-    SELECT j.*, 
-           CONCAT(u.nom, ' ', u.prenom) AS prof_nom,
-           CONCAT(c.description ,' ', IFNULL(cy.description, '')) AS classe_nom,
-           co.intitule AS cours_nom,
-           rc.id AS resume_id,
-           rc.fiche_no,
-           rc.domaine,
-           rc.discipline,
-           rc.titre_lecon,
-           rc.type_lecon,
-           rc.competence_attendue,
-           rc.resume_texte,
-           rc.devoir,
-           rc.piece_jointe AS resume_piece_jointe
-    FROM journal_classe j
-    LEFT JOIN agent u ON u.id = j.prof_id
-    LEFT JOIN classe c ON c.id = j.classe_id
-    LEFT JOIN cycle cy ON cy.id = c.cycle
-    LEFT JOIN cours co ON co.id = j.cours_id
-    LEFT JOIN resume_cours rc ON rc.journal_id = j.id
-    WHERE " . implode(" AND ", $where) . "
-    ORDER BY j.jour_date DESC, j.id DESC
-";
-
-$stmt = $pdo->prepare($sql);
-$stmt->execute($params);
-$journals = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 require_once __DIR__.'/../layout/header.php';
 require_once __DIR__.'/../layout/navbar.php';
@@ -282,21 +276,13 @@ require_once __DIR__.'/../layout/navbar.php';
     <!-- MESSAGE DE NOTIFICATION -->
     <?php if ($msg === 'resume_deleted_only'): ?>
     <div class="alert alert-warning alert-dismissible fade show rounded-4 border-0 shadow-sm mb-4" role="alert">
-        <strong>🗑️ Leçon supprimée :</strong> Le résumé de cours a bien été supprimé. Le journal de classe est resté
-        intact.
+        <strong>🗑️ Leçon supprimée :</strong> Le résumé de cours a bien été supprimé. Le journal de classe est resté intact.
         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
     </div>
     <?php endif; ?>
 
     <!-- SÉLECTION DE LA CLASSE -->
     <div class="row g-2 mb-4">
-        <div class="col-lg-2 col-md-3 col-6">
-            <a href="index.php#tableauResume"
-                class="card border-0 shadow-sm rounded-3 text-decoration-none text-center p-3 transition-all <?= ($selected_classe === 0) ? 'bg-primary text-white' : 'bg-white text-dark hover-shadow' ?>">
-                <div class="small fw-semibold text-uppercase tracking-wider opacity-75">Vue Générale</div>
-                <div class="fs-6 fw-bold mt-1">🏫 Toutes les classes</div>
-            </a>
-        </div>
         <?php foreach ($classes as $cl): ?>
         <?php $isActive = ($selected_classe === (int)$cl['id']); ?>
         <div class="col-lg-2 col-md-3 col-6">
@@ -309,63 +295,54 @@ require_once __DIR__.'/../layout/navbar.php';
         <?php endforeach; ?>
     </div>
 
+    <?php if ($selected_classe === 0): ?>
+    <div class="card border-0 shadow-sm rounded-4 text-center py-5 bg-white">
+        <div class="card-body py-5">
+            <div class="fs-1 text-muted mb-3">👈</div>
+            <h5 class="fw-semibold text-secondary">Veuillez sélectionner une classe ci-dessus pour consulter ses
+                journaux et résumés.</h5>
+        </div>
+    </div>
+    <?php else: ?>
+
     <!-- FILTRES DE RECHERCHE -->
     <div class="card border-0 shadow-sm rounded-4 mb-4 bg-white">
         <div class="card-body p-4">
             <form method="get" class="row g-3 align-items-end">
+                <input type="hidden" name="classe_id" value="<?= $selected_classe ?>">
 
-                <div class="row mb-3">
-                    <div class="col-lg-2 col-md-4">
-                        <label class="form-label small fw-bold text-secondary">Classe :</label>
-                        <select name="classe_id" class="form-select rounded-3 border-light-subtle">
-                            <option value="0">Toutes les classes</option>
-                            <?php foreach ($classes as $cl): ?>
-                            <option value="<?= $cl['id'] ?>"
-                                <?= $selected_classe === (int)$cl['id'] ? 'selected' : '' ?>>
-                                <?= htmlspecialchars($cl['description']) ?>
-                            </option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-                    <div class="col-lg-2 col-md-4">
-                        <label class="form-label small fw-bold text-secondary">Date précise :</label>
-                        <input type="date" name="single_date" class="form-control rounded-3 border-light-subtle"
-                            value="<?= htmlspecialchars($single_date) ?>">
-                    </div>
-                    <div class="col-lg-2 col-md-4">
-                        <label class="form-label small fw-bold text-secondary">Du :</label>
-                        <input type="date" name="date_debut" class="form-control rounded-3 border-light-subtle"
-                            value="<?= htmlspecialchars($date_debut) ?>">
-                    </div>
-                    <div class="col-lg-2 col-md-4">
-                        <label class="form-label small fw-bold text-secondary">Au :</label>
-                        <input type="date" name="date_fin" class="form-control rounded-3 border-light-subtle"
-                            value="<?= htmlspecialchars($date_fin) ?>">
-                    </div>
-                    <div class="col-lg-2 col-md-4">
-                        <label class="form-label small fw-bold text-secondary">Statut :</label>
-                        <select name="statut" class="form-select rounded-3 border-light-subtle">
-                            <option value="">Tous les statuts</option>
-                            <option value="en attente" <?= $statut_filter === 'en attente' ? 'selected' : '' ?>>⏳ En
-                                attente</option>
-                            <option value="valider" <?= $statut_filter === 'valider' ? 'selected' : '' ?>>✅ Validé
-                            </option>
-                            <option value="rejeter" <?= $statut_filter === 'rejeter' ? 'selected' : '' ?>>❌ Rejeté
-                            </option>
-                        </select>
-                    </div>
+                <div class="col-lg-3 col-md-6">
+                    <label class="form-label small fw-bold text-secondary">Date précise :</label>
+                    <input type="date" name="single_date" class="form-control rounded-3 border-light-subtle"
+                        value="<?= htmlspecialchars($single_date) ?>">
                 </div>
-
-                <div class="row">
-                    <div class="col-lg-4 col-md-4 d-flex gap-1">
-                        <button type="submit" class="btn btn-primary rounded-3 w-100 fw-semibold"
-                            title="Filtrer">Filtrer</button>
-                        <a href="index.php?view_all=1<?= $selected_classe > 0 ? '&classe_id='.$selected_classe : '' ?>"
-                            class="btn btn-info text-white rounded-3 w-100 fw-semibold text-nowrap"
-                            title="Afficher tout l'historique">📜 Voir tout</a>
-                        <a href="index.php" class="btn btn-danger rounded-3 w-100 fw-semibold"
-                            title="Aujourd'hui">Réinitialiser</a>
-                    </div>
+                <div class="col-lg-2 col-md-3">
+                    <label class="form-label small fw-bold text-secondary">Du :</label>
+                    <input type="date" name="date_debut" class="form-control rounded-3 border-light-subtle"
+                        value="<?= htmlspecialchars($date_debut) ?>">
+                </div>
+                <div class="col-lg-2 col-md-3">
+                    <label class="form-label small fw-bold text-secondary">Au :</label>
+                    <input type="date" name="date_fin" class="form-control rounded-3 border-light-subtle"
+                        value="<?= htmlspecialchars($date_fin) ?>">
+                </div>
+                <div class="col-lg-2 col-md-6">
+                    <label class="form-label small fw-bold text-secondary">Statut :</label>
+                    <select name="statut" class="form-select rounded-3 border-light-subtle">
+                        <option value="">Tous les statuts</option>
+                        <option value="en attente" <?= $statut_filter === 'en attente' ? 'selected' : '' ?>>⏳ En attente
+                        </option>
+                        <option value="valider" <?= $statut_filter === 'valider' ? 'selected' : '' ?>>✅ Validé</option>
+                        <option value="rejeter" <?= $statut_filter === 'rejeter' ? 'selected' : '' ?>>❌ Rejeté</option>
+                    </select>
+                </div>
+                <div class="col-lg-3 col-md-6 d-flex gap-2">
+                    <button type="submit" class="btn btn-primary rounded-3 w-100 fw-semibold">🔍 Filtrer</button>
+                    <a href="?classe_id=<?= $selected_classe ?>&all=1#tableauResume"
+                        class="btn btn-dark rounded-3 w-100 fw-semibold text-nowrap">👁️ Voir tout</a>
+                    <a href="?classe_id=<?= $selected_classe ?>#tableauResume"
+                        class="btn btn-danger border rounded-3 w-100 fw-semibold"
+                        title="Réinitialiser">Réinitialiser</a>
                 </div>
             </form>
         </div>
@@ -375,15 +352,7 @@ require_once __DIR__.'/../layout/navbar.php';
     <div class="card border-0 shadow-sm rounded-4 overflow-hidden mb-4 bg-white" id="tableauResume">
         <div class="card-header bg-white border-0 pt-4 px-4 pb-0 d-flex justify-content-between align-items-center">
             <h5 class="fw-bold mb-0 text-dark">
-                <?php 
-                    if ($view_all) {
-                        echo "📜 Tous les journaux (Historique complet)";
-                    } elseif ($single_date || $date_debut || $date_fin) {
-                        echo "🔍 Résultats filtrés";
-                    } else {
-                        echo "📅 Journaux d'Aujourd'hui (" . date('d/m/Y') . ")";
-                    }
-                ?>
+                <?= ($show_all) ? "📋 Historique complet" : (($single_date || $date_debut || $date_fin) ? "🔍 Résultats" : "📅 Aujourd'hui (".date('d/m/Y').")") ?>
             </h5>
         </div>
         <div class="table-responsive">
@@ -391,7 +360,6 @@ require_once __DIR__.'/../layout/navbar.php';
                 <thead class="table-light border-0">
                     <tr class="text-secondary small text-uppercase">
                         <th class="py-3">Date</th>
-                        <th class="py-3">Classe</th>
                         <th class="py-3">Professeur</th>
                         <th class="py-3">Cours</th>
                         <th class="py-3 text-start">Matières / Leçon</th>
@@ -404,17 +372,14 @@ require_once __DIR__.'/../layout/navbar.php';
                 <tbody class="border-top-0">
                     <?php if (empty($journals)): ?>
                     <tr>
-                        <td colspan="9" class="py-5 text-muted fw-semibold">
-                            Aucun journal trouvé.
+                        <td colspan="8" class="py-5 text-muted fw-semibold">
+                            Aucun enregistrement trouvé.
                         </td>
                     </tr>
                     <?php endif; ?>
                     <?php foreach ($journals as $j): ?>
                     <tr>
                         <td class="fw-semibold text-dark"><?= date('d/m/Y', strtotime($j['jour_date'])) ?></td>
-                        <td><span
-                                class="badge bg-primary-subtle text-primary border px-3 py-2 rounded-pill fw-bold"><?= htmlspecialchars($j['classe_nom'] ?? 'N/A') ?></span>
-                        </td>
                         <td class="fw-bold text-dark"><?= htmlspecialchars($j['prof_nom'] ?? 'Inconnu') ?></td>
                         <td><span
                                 class="badge bg-light text-dark border px-3 py-2 rounded-pill"><?= htmlspecialchars($j['cours_nom'] ?? 'N/A') ?></span>
@@ -428,6 +393,7 @@ require_once __DIR__.'/../layout/navbar.php';
                             <?php endif; ?>
                         </td>
 
+                        <!-- ETAT DU RÉSUMÉ / LEÇON -->
                         <td>
                             <?php if (!empty($j['resume_id'])): ?>
                             <button type="button"
@@ -436,7 +402,8 @@ require_once __DIR__.'/../layout/navbar.php';
                                 📑 Voir / Modifier
                             </button>
                             <?php else: ?>
-                            <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill px-3 opacity-75"
+                            <button type="button"
+                                class="btn btn-sm btn-outline-secondary rounded-pill px-3 opacity-75"
                                 disabled>
                                 ⚠️ Aucun résumé
                             </button>
@@ -445,7 +412,7 @@ require_once __DIR__.'/../layout/navbar.php';
 
                         <td>
                             <?php if (!empty($j['piece_jointe'])): ?>
-                            <a href="../../uploads/attachement_journal_de_class/<?= urlencode($j['piece_jointe']) ?>"
+                            <a href="../uploads/attachement_journal_de_class/<?= urlencode($j['piece_jointe']) ?>"
                                 target="_blank" class="btn btn-sm btn-outline-secondary rounded-pill px-3">📎 Voir</a>
                             <?php else: ?>
                             <span class="text-muted small">-</span>
@@ -483,8 +450,7 @@ require_once __DIR__.'/../layout/navbar.php';
                                     class="btn btn-sm btn-warning" title="Rejeter">✕</a>
                                 <?php endif; ?>
                                 <a href="index.php?action=delete&id=<?= $j['id'] ?>&classe_id=<?= $selected_classe ?>"
-                                    class="btn btn-sm btn-danger"
-                                    onclick="return confirm('Attention : Cela supprimera le journal DE CLASSE ET son résumé de cours associé. Continuer ?')"
+                                    class="btn btn-sm btn-danger" onclick="return confirm('Attention : Cela supprimera le journal DE CLASSE ET son résumé de cours associé. Continuer ?')"
                                     title="Supprimer Tout">🗑️</a>
                             </div>
                         </td>
@@ -498,11 +464,12 @@ require_once __DIR__.'/../layout/navbar.php';
     <div class="d-flex justify-content-end mb-4">
         <a href="index.php?action=valider_tout&classe_id=<?= $selected_classe ?>"
             class="btn btn-success btn-md rounded-3 fw-bold px-4 shadow"
-            onclick="return confirm('Voulez-vous vraiment valider tous les journaux en attente pour aujourd’hui ?');">
-            ⚡ Tout Valider pour Aujourd'hui
+            onclick="return confirm('Voulez-vous vraiment valider TOUS les journaux en attente pour cette classe ?');">
+            ⚡ Tout Valider cette Classe
         </a>
     </div>
 
+    <?php endif; ?>
 </div>
 
 <!-- MODAL CONSULTATION ET ÉDITION DU RÉSUMÉ -->
@@ -547,6 +514,7 @@ require_once __DIR__.'/../layout/navbar.php';
                     <label class="form-label fw-bold small text-secondary">Devoir à domicile :</label>
                     <textarea name="devoir" id="res_devoir" class="form-control rounded-3" rows="2"></textarea>
                 </div>
+
                 <div class="col-12">
                     <label class="form-label fw-bold small text-secondary">Pièce jointe (Optionnel) :</label>
                     <input type="file" name="resume_piece_jointe" class="form-control rounded-3">
@@ -555,6 +523,7 @@ require_once __DIR__.'/../layout/navbar.php';
             </div>
             <div class="modal-footer p-4 border-0 bg-light-subtle d-flex justify-content-between">
                 <div>
+                    <!-- Bouton pour supprimer UNIQUEMENT la leçon -->
                     <a href="#" id="btn_delete_resume" class="btn btn-danger rounded-3 px-3 fw-bold"
                         style="display: none;">
                         🗑️ Supprimer cette leçon uniquement
@@ -673,8 +642,7 @@ function openResumeModal(data) {
         btnDelete.href = 'index.php?action=delete_resume&id=' + resumeId + '&classe_id=<?= $selected_classe ?>';
         btnDelete.style.display = 'inline-block';
         btnDelete.onclick = function() {
-            return confirm(
-                "Voulez-vous vraiment supprimer UNIQUEMENT cette leçon ? Le journal de classe sera conservé.");
+            return confirm("Voulez-vous vraiment supprimer UNIQUEMENT cette leçon ? Le journal de classe sera conservé.");
         };
     } else {
         btnDelete.style.display = 'none';
@@ -682,8 +650,7 @@ function openResumeModal(data) {
 
     const fileContainer = document.getElementById('res_file_container');
     if (data.resume_piece_jointe) {
-        fileContainer.innerHTML = '<a href="../uploads/attachement_resume_cours/' + encodeURIComponent(data
-                .resume_piece_jointe) +
+        fileContainer.innerHTML = '<a href="../uploads/attachement_resume_cours/' + encodeURIComponent(data.resume_piece_jointe) +
             '" target="_blank" class="btn btn-sm btn-outline-primary w-100 fw-bold rounded-3">📄 Fichier joint à la leçon (Ouvrir)</a>';
     } else {
         fileContainer.innerHTML = '<span class="text-muted small">Aucun fichier joint à la leçon.</span>';
