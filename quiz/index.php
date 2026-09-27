@@ -28,13 +28,6 @@ try {
     $wheres = [];
     $params = [];
 
-    $filtersApplied = ($status !== '' || $classe > 0 || $createdAt !== '');
-
-    if (!$filtersApplied) {
-        // Par défaut : quiz du jour
-        $wheres[] = "DATE(q.created_at) = CURRENT_DATE";
-    }
-
     // Filtre statut
     if ($status !== '' && in_array($status, ['en attente','approuvé','rejeter','à revoir'], true)) {
         $wheres[] = "q.statut = :st";
@@ -51,6 +44,9 @@ try {
     if ($createdAt !== '') {
         $wheres[] = "DATE(q.created_at) = :createdAt";
         $params[':createdAt'] = $createdAt;
+    } else {
+        // Si aucune date spécifique n'est filtrée : prendre du Jour-J jusqu'aux dates passées
+        $wheres[] = "DATE(q.created_at) <= CURRENT_DATE";
     }
 
     $whereSql = $wheres ? ('WHERE '.implode(' AND ', $wheres)) : '';
@@ -107,8 +103,8 @@ try {
 
 <div class="container">
     <div class="d-block flex-wrap gap-2 justify-content-between align-items-center mb-3">
-        <h1 class="h4 mb-0">Quiz du jour</h1>
-        <p class="text-lead">Veuillez consulter le quiz du jour envoyé par les professeurs.</p>
+        <h1 class="h4 mb-0"><?= ($status === 'en attente') ? 'Quiz en attente de validation' : 'Quiz du jour et passés' ?></h1>
+        <p class="text-lead">Veuillez consulter la liste des quiz envoyés par les professeurs.</p>
     </div>
 
     <?php if ($ok): ?>

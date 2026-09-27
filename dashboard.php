@@ -7,7 +7,7 @@ require_directeur(); // vérifie session + envoie headers no-cache
 
 // Récupération du rôle en session
 $userRole    = (string)($_SESSION['user']['role'] ?? '');
-$isDirecteur = (strtolower(trim($userRole)) === 'directeur');
+$isDirecteur = in_array(strtolower(trim($userRole)), ['directeur', 'primaire', 'secondaire-humainte'], true);
 
 // Affiche la vue correspondant au rôle
 if ($isDirecteur) {
