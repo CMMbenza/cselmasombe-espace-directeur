@@ -160,7 +160,9 @@ if ($action === 'change_statut' && $id > 0 && isset($_GET['new_statut'])) {
     $target_classe = (int)($_GET['classe_id'] ?? 0);
     $stmt = $pdo->prepare("UPDATE journal_classe SET statut = ? WHERE id = ?");
     $stmt->execute([$_GET['new_statut'], $id]);
-    header("Location: index.php?classe_id=$target_classe&msg=statut_updated");
+    
+    $statut_redirect = isset($_GET['statut']) ? '&statut=' . urlencode($_GET['statut']) : '';
+    header("Location: index.php?classe_id=$target_classe$statut_redirect&msg=statut_updated");
     exit();
 }
 
@@ -194,6 +196,12 @@ $cours   = $pdo->query("SELECT id, intitule FROM cours ORDER BY intitule")->fetc
 // PARAMÈTRES DE RECHERCHE ET FILTRES
 $selected_classe = isset($_GET['classe_id']) ? (int)$_GET['classe_id'] : 0;
 $statut_filter   = $_GET['statut'] ?? '';
+
+// Normalisation du filtre statut
+if ($statut_filter === 'en_attente' || $statut_filter === 'en attente') {
+    $statut_filter = 'en attente';
+}
+
 $single_date     = $_GET['single_date'] ?? '';
 $date_debut      = $_GET['date_debut'] ?? '';
 $date_fin        = $_GET['date_fin'] ?? '';
@@ -220,8 +228,12 @@ if (!empty($single_date)) {
         $where[]  = "j.jour_date <= ?";
         $params[] = $date_fin;
     }
+} elseif ($statut_filter === 'en attente') {
+    // SI STATUT EN ATTENTE : Aujourd'hui ET toutes les dates passées (<= aujourd'hui)
+    $where[]  = "j.jour_date <= ?";
+    $params[] = $today;
 } elseif (!$view_all) {
-    // PAR DÉFAUT (si on n'a pas cliqué sur Voir Tout) : Uniquement aujourd'hui
+    // PAR DÉFAUT : Uniquement aujourd'hui
     $where[]  = "j.jour_date = ?";
     $params[] = $today;
 }
@@ -290,8 +302,11 @@ require_once __DIR__.'/../layout/navbar.php';
 
     <!-- SÉLECTION DE LA CLASSE -->
     <div class="row g-2 mb-4">
+        <?php 
+            $statut_param = !empty($statut_filter) ? '&statut=' . urlencode($statut_filter) : ''; 
+        ?>
         <div class="col-lg-2 col-md-3 col-6">
-            <a href="index.php#tableauResume"
+            <a href="index.php?classe_id=0<?= $statut_param ?>#tableauResume"
                 class="card border-0 shadow-sm rounded-3 text-decoration-none text-center p-3 transition-all <?= ($selected_classe === 0) ? 'bg-primary text-white' : 'bg-white text-dark hover-shadow' ?>">
                 <div class="small fw-semibold text-uppercase tracking-wider opacity-75">Vue Générale</div>
                 <div class="fs-6 fw-bold mt-1">🏫 Toutes les classes</div>
@@ -300,7 +315,7 @@ require_once __DIR__.'/../layout/navbar.php';
         <?php foreach ($classes as $cl): ?>
         <?php $isActive = ($selected_classe === (int)$cl['id']); ?>
         <div class="col-lg-2 col-md-3 col-6">
-            <a href="?classe_id=<?= $cl['id'] ?>#tableauResume"
+            <a href="?classe_id=<?= $cl['id'] ?><?= $statut_param ?>#tableauResume"
                 class="card border-0 shadow-sm rounded-3 text-decoration-none text-center p-3 transition-all <?= $isActive ? 'bg-primary text-white' : 'bg-white text-dark hover-shadow' ?>">
                 <div class="small fw-semibold text-uppercase tracking-wider opacity-75">Classe</div>
                 <div class="fs-6 fw-bold mt-1">🏫 <?= htmlspecialchars($cl['description']) ?></div>
@@ -346,12 +361,9 @@ require_once __DIR__.'/../layout/navbar.php';
                         <label class="form-label small fw-bold text-secondary">Statut :</label>
                         <select name="statut" class="form-select rounded-3 border-light-subtle">
                             <option value="">Tous les statuts</option>
-                            <option value="en attente" <?= $statut_filter === 'en attente' ? 'selected' : '' ?>>⏳ En
-                                attente</option>
-                            <option value="valider" <?= $statut_filter === 'valider' ? 'selected' : '' ?>>✅ Validé
-                            </option>
-                            <option value="rejeter" <?= $statut_filter === 'rejeter' ? 'selected' : '' ?>>❌ Rejeté
-                            </option>
+                            <option value="en attente" <?= $statut_filter === 'en attente' ? 'selected' : '' ?>>⏳ En attente</option>
+                            <option value="valider" <?= $statut_filter === 'valider' ? 'selected' : '' ?>>✅ Validé</option>
+                            <option value="rejeter" <?= $statut_filter === 'rejeter' ? 'selected' : '' ?>>❌ Rejeté</option>
                         </select>
                     </div>
                 </div>
@@ -376,7 +388,9 @@ require_once __DIR__.'/../layout/navbar.php';
         <div class="card-header bg-white border-0 pt-4 px-4 pb-0 d-flex justify-content-between align-items-center">
             <h5 class="fw-bold mb-0 text-dark">
                 <?php 
-                    if ($view_all) {
+                    if ($statut_filter === 'en attente') {
+                        echo "⏳ Journaux de classe en attente de validation (Aujourd'hui et passés)";
+                    } elseif ($view_all) {
                         echo "📜 Tous les journaux (Historique complet)";
                     } elseif ($single_date || $date_debut || $date_fin) {
                         echo "🔍 Résultats filtrés";
@@ -475,11 +489,11 @@ require_once __DIR__.'/../layout/navbar.php';
                                     data-statut="<?= $j['statut'] ?>" title="Modifier">✏️</button>
 
                                 <?php if ($j['statut'] !== 'valider'): ?>
-                                <a href="index.php?action=change_statut&id=<?= $j['id'] ?>&new_statut=valider&classe_id=<?= $selected_classe ?>"
+                                <a href="index.php?action=change_statut&id=<?= $j['id'] ?>&new_statut=valider&classe_id=<?= $selected_classe ?><?= $statut_param ?>"
                                     class="btn btn-sm btn-success" title="Valider">✓</a>
                                 <?php endif; ?>
                                 <?php if ($j['statut'] !== 'rejeter'): ?>
-                                <a href="index.php?action=change_statut&id=<?= $j['id'] ?>&new_statut=rejeter&classe_id=<?= $selected_classe ?>"
+                                <a href="index.php?action=change_statut&id=<?= $j['id'] ?>&new_statut=rejeter&classe_id=<?= $selected_classe ?><?= $statut_param ?>"
                                     class="btn btn-sm btn-warning" title="Rejeter">✕</a>
                                 <?php endif; ?>
                                 <a href="index.php?action=delete&id=<?= $j['id'] ?>&classe_id=<?= $selected_classe ?>"
