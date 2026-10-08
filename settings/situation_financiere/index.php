@@ -1,8 +1,8 @@
 <?php
 declare(strict_types=1);
 
-require_once __DIR__ . '/../includes/auth.php';
-require_once __DIR__ . '/../config/db.php';
+require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/../../config/db.php';
 
 // Filtre par année scolaire
 $selectedAnnee = trim($_GET['anneeScolaire'] ?? '');
@@ -98,8 +98,8 @@ $totalPercuGlobal   = (float)$fraisScolaires['percu'] + (float)$fraisConnexes['p
 $totalResteGlobal   = (float)$fraisScolaires['reste'] + (float)$fraisConnexes['reste'];
 $soldeDisponible    = $totalPercuGlobal - $totalDepensesGlobal;
 
-require_once __DIR__ . '/../layout/header.php';
-require_once __DIR__ . '/../layout/navbar.php';
+require_once __DIR__ . '/../../layout/header.php';
+require_once __DIR__ . '/../../layout/navbar.php';
 ?>
 
 <div class="container-fluid px-4 py-3">
@@ -380,4 +380,4 @@ require_once __DIR__ . '/../layout/navbar.php';
 }
 </style>
 
-<?php require_once __DIR__ . '/../layout/footer.php'; ?>
+<?php require_once __DIR__ . '/../../layout/footer.php'; ?>

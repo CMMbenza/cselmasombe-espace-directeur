@@ -36,7 +36,7 @@ function aria_current(string $class): string {
         <a class="navbar-brand fw-bold" href="<?= $BASE ?>/dashboard.php">Profil Directeur</a>
 
         <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainNav"
-                aria-controls="mainNav" aria-expanded="false" aria-label="Basculer la navigation">
+            aria-controls="mainNav" aria-expanded="false" aria-label="Basculer la navigation">
             <span class="navbar-toggler-icon"></span>
         </button>
 
@@ -57,7 +57,7 @@ function aria_current(string $class): string {
                 ?>
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle <?= $activeScholar ?>" href="#" id="scolariteDropdown"
-                       role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                        role="button" data-bs-toggle="dropdown" aria-expanded="false">
                         Menages/Elèves
                     </a>
                     <ul class="dropdown-menu" aria-labelledby="scolariteDropdown">
@@ -98,7 +98,7 @@ function aria_current(string $class): string {
                 ?>
                 <li class="d-none nav-item dropdown">
                     <a class="nav-link dropdown-toggle <?= $activeScholar ?>" href="#" id="scolariteDropdown2"
-                       role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                        role="button" data-bs-toggle="dropdown" aria-expanded="false">
                         Scolarité
                     </a>
                     <ul class="dropdown-menu" aria-labelledby="scolariteDropdown2">
@@ -125,18 +125,18 @@ function aria_current(string $class): string {
                 ?>
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle <?= $activeAddProf ?>" href="#" id="ajouterProfDropdown"
-                       role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                        role="button" data-bs-toggle="dropdown" aria-expanded="false">
                         Prof/Enseignant
                     </a>
                     <ul class="dropdown-menu" aria-labelledby="ajouterProfDropdown">
                         <?php if ($isDirecteur): ?>
-                            <!-- Agent est affiché uniquement pour le directeur -->
-                            <?php $a = is_active(['/agents/'], $uriPath); ?>
-                            <li>
-                                <a class="dropdown-item <?= $a ?>" href="<?= $BASE ?>/agents/">
-                                    Agent
-                                </a>
-                            </li>
+                        <!-- Agent est affiché uniquement pour le directeur -->
+                        <?php $a = is_active(['/agents/'], $uriPath); ?>
+                        <li>
+                            <a class="dropdown-item <?= $a ?>" href="<?= $BASE ?>/agents/">
+                                Agent
+                            </a>
+                        </li>
                         <?php endif; ?>
 
                         <?php $a = is_active(['/quiz/'], $uriPath); ?>
@@ -193,13 +193,33 @@ function aria_current(string $class): string {
                 </li>
 
                 <?php if ($isDirecteur): ?>
-                    <!-- Situation financière affichée uniquement pour le directeur -->
-                    <?php $a = is_active(['/situation_financiere/'], $uriPath); ?>
-                    <li class="nav-item">
-                        <a class="nav-link <?= $a ?>" <?= aria_current($a) ?> href="<?= $BASE ?>/situation_financiere/">
-                            Situation financière
-                        </a>
-                    </li>
+                <!-- Menu Paramètres affiché uniquement pour le directeur -->
+                <li class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle" href="#" id="settingsDropdown" role="button"
+                        data-bs-toggle="dropdown" aria-expanded="false">
+                        Paramètres
+                    </a>
+
+                    <ul class="dropdown-menu" aria-labelledby="settingsDropdown">
+
+                        <?php $a = is_active(['/settings/situation_financiere/'], $uriPath); ?>
+                        <li>
+                            <a class="dropdown-item <?= $a ?>" <?= aria_current($a) ?>
+                                href="<?= $BASE ?>/settings/situation_financiere/">
+                                Situation financière
+                            </a>
+                        </li>
+
+                        <?php $a = is_active(['/settings/blocage.php'], $uriPath); ?>
+                        <li>
+                            <a class="dropdown-item <?= $a ?>" <?= aria_current($a) ?>
+                                href="<?= $BASE ?>/settings/blocage.php">
+                                Blocage d'accès
+                            </a>
+                        </li>
+
+                    </ul>
+                </li>
                 <?php endif; ?>
             </ul>
 
